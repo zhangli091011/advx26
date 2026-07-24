@@ -17,13 +17,30 @@ export function apiSuccess<T>(data: T, status = 200) {
 export function isSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");
-  if (fetchSite === "cross-site") return false;
   if (!origin) return fetchSite === "same-origin";
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    const source = new URL(origin);
+    const destination = new URL(request.url);
+    if (source.origin === destination.origin) return true;
+
+    // Electron may normalize the same loopback server between localhost and
+    // 127.0.0.1. Keep protocol and dynamic port strict while allowing aliases.
+    return isLoopback(source.hostname)
+      && isLoopback(destination.hostname)
+      && source.protocol === destination.protocol
+      && effectivePort(source) === effectivePort(destination);
   } catch {
     return false;
   }
+}
+
+function isLoopback(hostname: string) {
+  const host = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+function effectivePort(url: URL) {
+  return url.port || (url.protocol === "https:" ? "443" : url.protocol === "http:" ? "80" : "");
 }
 
 export function formatZodError(error: { issues: Array<{ path: PropertyKey[]; message: string }> }) {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PitUpdateButton } from "@/components/pit/pit-update-button";
+import { PitFullscreenButton } from "@/components/pit/pit-fullscreen-button";
 import { pitControl, usePitState, type PitTool } from "@/components/pit/use-pit-state";
 import type { PitState, RackUnit } from "@/types/pit";
 
@@ -15,6 +16,7 @@ const NAV = [
   { zh: "赛事信息", en: "MATCH", icon: "match", href: "/pit/match" },
   { zh: "电源控制", en: "POWER", icon: "power", href: "/pit/power" },
   { zh: "战队展示", en: "TEAM", icon: "team", href: "/pit/team" },
+  { zh: "测试管理", en: "SETTINGS", icon: "settings", href: "/pit/settings" },
 ];
 const EMPTY_TOOLS: PitTool[] = [];
 
@@ -35,6 +37,7 @@ function NavIcon({ kind, active }: { kind: string; active: boolean }) {
       {kind === "match" && <>{rect(1, 1, 18, 10)}{rect(7, 14, 6, 3)}{rect(1, 8, 3, 6)}{rect(16, 8, 3, 6)}</>}
       {kind === "power" && <>{ring(10, 11, 7)}{rect(8, 0, 3, 10)}</>}
       {kind === "team" && <>{ring(4, 6, 3)}{ring(16, 6, 3)}{rect(1, 12, 6, 3)}{rect(13, 12, 6, 3)}</>}
+      {kind === "settings" && <>{ring(10, 10, 5)}{ring(10, 10, 2)}{rect(9, 0, 2, 4)}{rect(9, 16, 2, 4)}{rect(0, 9, 4, 2)}{rect(16, 9, 4, 2)}</>}
     </svg>
   );
 }
@@ -109,6 +112,7 @@ export function PitClient() {
         <div className="pit-title">PIT-OS // SMART TOOLBOX</div>
         <div className="pit-subtitle">智能工具箱控制系统  V2.4.1</div>
         <div className="pit-chips">
+          <PitFullscreenButton />
           <PitUpdateButton />
           <div className="pit-chip">
             <i style={{ background: brokerOnline ? "var(--pit-ok)" : "var(--pit-err)" }} />

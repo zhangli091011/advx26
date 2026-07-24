@@ -3,31 +3,45 @@ import "server-only";
 import MiCloud from "homebridge-miot/lib/protocol/MiCloud.js";
 import MiioProtocol from "homebridge-miot/lib/protocol/MiioProtocol.js";
 import { parseMiotOutletConfigs, type MiotOutletConfig, type MiotPropertyRef } from "@/lib/miot-config";
+import { fetchBrokerSession } from "@/lib/miot-session-broker";
+import { DEFAULT_MIOT_BROKER_SSH_HOST, DEFAULT_MIOT_BROKER_URL, type StoredPitConfig } from "@/lib/pit-config-model";
 import type { PowerChannel } from "@/types/pit";
 
 type Transport = "local" | "cloud";
 type OutletUpdate = (channel: PowerChannel) => void;
-
-const logger = {
-  debug: (message: string) => {
-    if (process.env.MIOT_DEBUG === "true") console.info(`[miot] ${message}`);
-  },
-  deepDebug: (message: string) => {
-    if (process.env.MIOT_DEBUG === "true") console.debug(`[miot] ${message}`);
-  },
-};
 
 export class MiotOutletManager {
   readonly configs: MiotOutletConfig[];
   private readonly local: MiioProtocol | null;
   private cloud: MiCloud | null = null;
   private cloudLogin: Promise<void> | null = null;
+  private brokerRefresh: Promise<void> | null = null;
+  private brokerRefreshTimer: NodeJS.Timeout | null = null;
+  private brokerRefreshedAt = 0;
   private pollTimer: NodeJS.Timeout | null = null;
   private update: OutletUpdate | null = null;
+  private readonly pollIntervalMs: number;
+  private readonly cloudConfig: StoredPitConfig["miot"]["cloud"];
+  private readonly logger: { debug(message: string): void; deepDebug(message: string): void };
 
-  constructor(rawConfig = process.env.MIOT_OUTLETS_JSON) {
-    this.configs = parseMiotOutletConfigs(rawConfig);
-    this.local = this.configs.some((config) => config.ip && config.token) ? new MiioProtocol(logger) : null;
+  constructor(config?: StoredPitConfig["miot"]) {
+    this.configs = config?.outlets ?? parseMiotOutletConfigs(process.env.MIOT_OUTLETS_JSON);
+    this.pollIntervalMs = config?.pollIntervalMs ?? Number(process.env.MIOT_POLL_INTERVAL_MS ?? 10_000);
+    this.cloudConfig = config?.cloud ?? {
+      region: process.env.MIOT_CLOUD_REGION ?? "cn",
+      username: process.env.MIOT_CLOUD_USERNAME ?? "",
+      password: process.env.MIOT_CLOUD_PASSWORD ?? "",
+      session: process.env.MIOT_CLOUD_SESSION_JSON ?? "",
+      brokerUrl: process.env.MIOT_SESSION_BROKER_URL ?? DEFAULT_MIOT_BROKER_URL,
+      brokerKey: process.env.MIOT_SESSION_BROKER_KEY ?? "",
+      brokerSshHost: process.env.MIOT_SESSION_BROKER_SSH_HOST ?? DEFAULT_MIOT_BROKER_SSH_HOST,
+    };
+    const debug = config?.debug ?? process.env.MIOT_DEBUG === "true";
+    this.logger = {
+      debug: (message) => { if (debug) console.info(`[miot] ${message}`); },
+      deepDebug: (message) => { if (debug) console.debug(`[miot] ${message}`); },
+    };
+    this.local = this.configs.some((item) => item.ip && item.token) ? new MiioProtocol(this.logger) : null;
     for (const config of this.configs) {
       if (config.ip && config.token) this.local?.updateDevice(config.ip, { token: config.token });
     }
@@ -36,9 +50,15 @@ export class MiotOutletManager {
   start(update: OutletUpdate) {
     if (this.configs.length === 0 || this.pollTimer) return;
     this.update = update;
+    if (this.cloudConfig.brokerUrl) {
+      void this.refreshBrokerSession().catch((error) => this.logger.debug(`Session Broker 同步失败：${safeError(error)}`));
+      this.brokerRefreshTimer = setInterval(() => {
+        void this.refreshBrokerSession().catch((error) => this.logger.debug(`Session Broker 同步失败：${safeError(error)}`));
+      }, 6 * 60 * 60 * 1000);
+      this.brokerRefreshTimer.unref();
+    }
     void this.pollAll();
-    const interval = Number(process.env.MIOT_POLL_INTERVAL_MS ?? 10_000);
-    this.pollTimer = setInterval(() => void this.pollAll(), Math.max(5_000, interval));
+    this.pollTimer = setInterval(() => void this.pollAll(), Math.max(5_000, this.pollIntervalMs));
   }
 
   hasChannel(id: string) {
@@ -51,6 +71,21 @@ export class MiotOutletManager {
     const { transport } = await this.withFallback(config, (selected) => this.setProperty(config, config.power, on, selected));
     await this.pollOne(config, transport);
     return transport;
+  }
+
+  async testConnection(id: string) {
+    const config = this.configs.find((item) => item.id === id);
+    if (!config) throw new Error("未找到米家插座配置");
+    const { transport } = await this.withFallback(config, (selected) => this.getProperties(config, [config.power], selected));
+    return transport;
+  }
+
+  destroy() {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    if (this.brokerRefreshTimer) clearInterval(this.brokerRefreshTimer);
+    this.pollTimer = null;
+    this.brokerRefreshTimer = null;
+    this.local?.destroy();
   }
 
   private async pollAll() {
@@ -91,7 +126,7 @@ export class MiotOutletManager {
         updatedAt: Date.now(),
       });
     } catch (error) {
-      logger.debug(`${config.id} poll failed: ${safeError(error)}`);
+      this.logger.debug(`${config.id} poll failed: ${safeError(error)}`);
       this.update?.({
         id: config.id,
         name: config.name,
@@ -116,7 +151,7 @@ export class MiotOutletManager {
         return { value: await operation("local"), transport: "local" as const };
       } catch (error) {
         localError = error;
-        logger.debug(`${config.id} local failed, trying cloud: ${safeError(error)}`);
+        this.logger.debug(`${config.id} local failed, trying cloud: ${safeError(error)}`);
       }
     }
     if (config.did && this.hasCloudConfig()) {
@@ -151,13 +186,16 @@ export class MiotOutletManager {
   }
 
   private hasCloudConfig() {
-    return Boolean(process.env.MIOT_CLOUD_SESSION_JSON || (process.env.MIOT_CLOUD_USERNAME && process.env.MIOT_CLOUD_PASSWORD));
+    return Boolean(this.cloudConfig.brokerUrl || this.cloudConfig.session || (this.cloudConfig.username && this.cloudConfig.password));
   }
 
   private async getCloud() {
+    if (this.cloudConfig.brokerUrl && Date.now() - this.brokerRefreshedAt > 5 * 60 * 60 * 1000) {
+      await this.refreshBrokerSession();
+    }
     if (!this.cloud) {
-      this.cloud = new MiCloud(logger);
-      this.cloud.setCountry(process.env.MIOT_CLOUD_REGION ?? "cn");
+      this.cloud = new MiCloud(this.logger);
+      this.cloud.setCountry(this.cloudConfig.region);
       this.cloud.setRequestTimeout(5_000);
     }
     if (!this.cloud.isLoggedIn()) {
@@ -167,8 +205,23 @@ export class MiotOutletManager {
     return this.cloud;
   }
 
+  private async refreshBrokerSession() {
+    if (this.brokerRefresh) return this.brokerRefresh;
+    this.brokerRefresh = (async () => {
+      const session = await fetchBrokerSession(this.cloudConfig);
+      if (!session) return;
+      this.cloudConfig.session = JSON.stringify(session);
+      this.brokerRefreshedAt = Date.now();
+      if (this.cloud) this.cloud.setServiceToken(session);
+      this.logger.debug("Session Broker 同步成功");
+    })().finally(() => {
+      this.brokerRefresh = null;
+    });
+    return this.brokerRefresh;
+  }
+
   private async loginCloud() {
-    const session = process.env.MIOT_CLOUD_SESSION_JSON;
+    const session = this.cloudConfig.session;
     if (session) {
       try {
         this.cloud?.setServiceToken(JSON.parse(session));
@@ -178,8 +231,8 @@ export class MiotOutletManager {
       if (!this.cloud?.isLoggedIn()) throw new Error("米家云端 session 缺少必要字段");
       return;
     }
-    const username = process.env.MIOT_CLOUD_USERNAME;
-    const password = process.env.MIOT_CLOUD_PASSWORD;
+    const username = this.cloudConfig.username;
+    const password = this.cloudConfig.password;
     if (!username || !password) throw new Error("未配置米家云端账号或 session");
     try {
       await this.cloud?.login(username, password);

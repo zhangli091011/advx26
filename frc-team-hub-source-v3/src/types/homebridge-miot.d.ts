@@ -19,6 +19,14 @@ declare module "homebridge-miot/lib/protocol/MiCloud.js" {
     timestamp?: number;
     loginMethod?: string;
   };
+  export type MiCloudDevice = {
+    did?: string | number;
+    name?: string;
+    model?: string;
+    localip?: string;
+    token?: string;
+    isOnline?: boolean;
+  };
   export default class MiCloud {
     constructor(logger: Logger);
     setCountry(country: string): void;
@@ -26,6 +34,7 @@ declare module "homebridge-miot/lib/protocol/MiCloud.js" {
     setServiceToken(session: CloudSession): void;
     isLoggedIn(): boolean;
     login(username: string, password: string): Promise<void>;
+    getDevices(deviceIds?: Array<string | number>): Promise<MiCloudDevice[]>;
     miotGetProps(params: unknown[]): Promise<unknown>;
     miotSetProps(params: unknown[]): Promise<unknown>;
   }

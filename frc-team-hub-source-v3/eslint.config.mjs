@@ -17,7 +17,7 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
   ]),
   {
-    files: ["hardware/scripts/*.js"],
+    files: ["hardware/scripts/*.js", "electron/preload.cjs"],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },

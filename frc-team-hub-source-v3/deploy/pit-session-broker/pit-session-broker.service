@@ -1,0 +1,22 @@
+[Unit]
+Description=PIT-OS Xiaomi Session Broker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pit-session-broker
+EnvironmentFile=/etc/pit-session-broker.env
+ExecStart=/usr/bin/node /opt/pit-session-broker/server.mjs
+Restart=always
+RestartSec=5
+User=pit-session
+Group=pit-session
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pit-session-broker
+
+[Install]
+WantedBy=multi-user.target

@@ -85,6 +85,7 @@ async function startNextServer() {
       HOSTNAME: "127.0.0.1",
       PORT: String(port),
       PIT_MQTT_URL: process.env.PIT_MQTT_URL || "mqtt://127.0.0.1:1883",
+      PIT_CONFIG_DIR: path.join(app.getPath("userData"), "config"),
     },
     stdio: "pipe",
     windowsHide: true,
@@ -122,7 +123,7 @@ async function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: path.join(__dirname, "preload.mjs"),
+      preload: path.join(__dirname, "preload.cjs"),
     },
   });
 
@@ -130,6 +131,11 @@ async function createWindow() {
     mainWindow.maximize();
     mainWindow.show();
   });
+  const sendFullscreenState = () => {
+    mainWindow?.webContents.send("pit:fullscreen-changed", mainWindow.isFullScreen());
+  };
+  mainWindow.on("enter-full-screen", sendFullscreenState);
+  mainWindow.on("leave-full-screen", sendFullscreenState);
   await mainWindow.loadURL(url);
 }
 
@@ -222,6 +228,21 @@ async function checkForUpdatesManually() {
 }
 
 ipcMain.handle("pit:check-for-updates", checkForUpdatesManually);
+ipcMain.handle("pit:restart-application", () => {
+  app.relaunch();
+  app.exit(0);
+});
+ipcMain.handle("pit:get-fullscreen", (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  return window?.isFullScreen() ?? false;
+});
+ipcMain.handle("pit:toggle-fullscreen", (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window !== mainWindow) return false;
+  const fullscreen = !window.isFullScreen();
+  window.setFullScreen(fullscreen);
+  return fullscreen;
+});
 
 const hasLock = app.requestSingleInstanceLock();
 

@@ -88,12 +88,14 @@ WorkingDirectory=/home/pi/frc-team-hub
 Environment=PIT_MQTT_URL=mqtt://127.0.0.1:1883
 Environment=PIT_MQTT_USERNAME=pit-device
 Environment=PIT_MQTT_PASSWORD=<部署密码>
+Environment=PIT_CONFIG_DIR=/var/lib/pit-os
 ExecStart=/usr/bin/npm run start -- --port 3000
 Restart=always
 User=pi
 [Install]
 WantedBy=multi-user.target
 EOF
+sudo install -d -o pi -g pi -m 0700 /var/lib/pit-os
 sudo systemctl enable --now pit-os
 
 # 6) 触摸屏开机全屏（Chromium kiosk）

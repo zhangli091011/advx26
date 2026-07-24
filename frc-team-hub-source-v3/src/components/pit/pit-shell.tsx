@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { PitUpdateButton } from "@/components/pit/pit-update-button";
+import { PitFullscreenButton } from "@/components/pit/pit-fullscreen-button";
 
 /* ---------- shared shell for all PIT-OS sub-pages ---------- */
 
@@ -32,6 +33,7 @@ const NAV_ITEMS = [
   { zh: "赛事信息", en: "MATCH", href: "/pit/match", icon: "match" },
   { zh: "电源控制", en: "POWER", href: "/pit/power", icon: "power" },
   { zh: "战队展示", en: "TEAM", href: "/pit/team", icon: "team" },
+  { zh: "测试管理", en: "SETTINGS", href: "/pit/settings", icon: "settings" },
 ];
 
 function NavIcon({ kind, active }: { kind: string; active: boolean }) {
@@ -51,6 +53,7 @@ function NavIcon({ kind, active }: { kind: string; active: boolean }) {
       {kind === "match" && <>{rect(1, 1, 18, 10)}{rect(7, 14, 6, 3)}{rect(1, 8, 3, 6)}{rect(16, 8, 3, 6)}</>}
       {kind === "power" && <>{ring(10, 11, 7)}{rect(8, 0, 3, 10)}</>}
       {kind === "team" && <>{ring(4, 6, 3)}{ring(16, 6, 3)}{rect(1, 12, 6, 3)}{rect(13, 12, 6, 3)}</>}
+      {kind === "settings" && <>{ring(10, 10, 5)}{ring(10, 10, 2)}{rect(9, 0, 2, 4)}{rect(9, 16, 2, 4)}{rect(0, 9, 4, 2)}{rect(16, 9, 4, 2)}</>}
     </svg>
   );
 }
@@ -71,6 +74,7 @@ export function PitShell({
         <div className="pit-brand">FRC</div>
         <div className="pit-title">PIT-OS // {title}</div>
         <div className="pit-chips">
+          <PitFullscreenButton />
           <PitUpdateButton />
           <div className="pit-clock">{clock}</div>
         </div>

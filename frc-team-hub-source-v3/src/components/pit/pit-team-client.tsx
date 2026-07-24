@@ -14,10 +14,10 @@ export function PitTeamClient() {
         <h1 className="pit-hero-num">----</h1>
         <h2 className="pit-hero-name">战队资料未配置</h2>
         <span className="pit-hero-en">TEAM PROFILE · NOT CONFIGURED</span>
-        <div style={{ position: "absolute", left: 24, top: 480, width: 772, height: 300 }}>
+        <div className="pit-team-model-frame">
           <StepViewer />
         </div>
-        <span className="pit-hero-robot-lb">机器人资料未配置 · 可导入本地 STEP 文件预览</span>
+        <span className="pit-hero-robot-lb">本地 STEP 模型 · 支持拖动旋转、缩放与粒子密度配置</span>
         <span className="pit-hero-record">赛季战绩未配置</span>
       </section>
       <Panel x={1060} y={96} w={820} h={460} title="机器能力一览" en="ROBOT CAPABILITIES">

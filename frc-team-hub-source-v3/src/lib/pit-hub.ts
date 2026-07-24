@@ -3,6 +3,7 @@ import "server-only";
 import mqtt from "mqtt";
 import { EventEmitter } from "node:events";
 import { MiotOutletManager } from "@/lib/miot-outlets";
+import { loadPitConfigFallback } from "@/lib/pit-config";
 import type {
   Battery,
   Compartment,
@@ -66,8 +67,9 @@ class PitHub extends EventEmitter {
   start() {
     if (this.started) return;
     this.started = true;
+    const config = loadPitConfigFallback();
     try {
-      this.miot = new MiotOutletManager();
+      this.miot = new MiotOutletManager(config.miot);
       this.miot.start((channel) => {
         const index = this.state.channels.findIndex((item) => item.id === channel.id);
         if (index >= 0) this.state.channels[index] = channel;
@@ -80,12 +82,12 @@ class PitHub extends EventEmitter {
       console.error(`[miot] 配置加载失败：${error instanceof Error ? error.message : String(error)}`);
       this.miot = null;
     }
-    const url = process.env.PIT_MQTT_URL ?? "mqtt://127.0.0.1:1883";
+    const url = config.mqtt.url;
     try {
       this.client = mqtt.connect(url, {
         clientId: `pit-hub-${Math.random().toString(16).slice(2, 8)}`,
-        username: process.env.PIT_MQTT_USERNAME || undefined,
-        password: process.env.PIT_MQTT_PASSWORD || undefined,
+        username: config.mqtt.username || undefined,
+        password: config.mqtt.password || undefined,
         reconnectPeriod: 3000,
         connectTimeout: 4000,
       });

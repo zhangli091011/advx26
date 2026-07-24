@@ -15,6 +15,7 @@
 | `/pit/match` | 赛事信息：实时比分、下场倒计时、完整赛程、AI 云端战略分析 |
 | `/pit/power` | 电源控制：ESP32 继电器或米家智能插座 3、总负载仪表、电池充电 |
 | `/pit/team` | 战队展示：形象墙、机器能力、Pit Interview 流程清单 |
+| `/pit/settings` | 测试管理：MQTT、米家云、插座通道配置及连接测试 |
 
 ## 架构
 
@@ -51,6 +52,8 @@ npm run dev
 `xiaomi.plug.mcn005` 常见映射：开关 `2/1`、当前功率 `3/2`。`chuangmi.plug.212a01` 常见映射：开关 `2/1`、功率 `5/6`、电流 `5/2`、电压 `5/3`。商品名不能唯一确定型号，请以账号设备清单和 `https://miot-spec.org/miot-spec-v2/` 返回结果为准。
 
 云端回退可配置 `MIOT_CLOUD_USERNAME`、`MIOT_CLOUD_PASSWORD` 和 `MIOT_CLOUD_REGION`；启用二次验证的账号应配置 `MIOT_CLOUD_SESSION_JSON`。所有凭据仅供服务端使用，不要使用 `NEXT_PUBLIC_` 前缀。
+
+也可以在 `/pit/settings` 中管理 MQTT、米家云和每个 `CH1-CH8` 插座。配置保存到 `PIT_CONFIG_DIR/pit-config.json`；Electron 自动使用当前用户的应用数据目录，树莓派建议使用 `/var/lib/pit-os`。密码、token 和云 session 不会返回浏览器，编辑框留空表示保留原值。保存后重启服务生效。
 
 提交前运行：
 

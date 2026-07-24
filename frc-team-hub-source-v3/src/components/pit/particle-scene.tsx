@@ -1,6 +1,7 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { PointCloudData } from "./step-points";
@@ -10,7 +11,7 @@ import type { PointCloudData } from "./step-points";
  * - 点云模型（黄色粒子 + 尺寸衰减 + 呼吸发光）
  * - 粒子从散开状态聚合成型（导入时的 assemble 动画）
  * - 旋转基座 + 扫描环 + 参考网格
- * - 缓慢自转 + 鼠标视差
+ * - 鼠标或触摸拖动旋转，滚轮缩放
  */
 
 const vertexShader = /* glsl */ `
@@ -75,7 +76,7 @@ function seededRandom(index: number) {
   return value - Math.floor(value);
 }
 
-function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: number }) {
+function ParticleModel({ data, assemble, replay }: { data: PointCloudData; assemble: number; replay: number }) {
   const pointsRef = useRef<THREE.Points>(null);
   const groupRef = useRef<THREE.Group>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
@@ -84,6 +85,12 @@ function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: num
   useEffect(() => {
     assembleRef.current.value = assemble;
   }, [assemble]);
+
+  useEffect(() => {
+    const material = materialRef.current;
+    if (material) material.uniforms.uAssemble.value = 0;
+    assembleRef.current.value = 1;
+  }, [replay]);
 
   const { geometry, uniforms } = useMemo(() => {
     const count = data.count;
@@ -129,13 +136,6 @@ function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: num
       4.5,
       delta,
     );
-    if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.22;
-      // 鼠标视差
-      const mx = state.pointer.x, my = state.pointer.y;
-      groupRef.current.rotation.x = THREE.MathUtils.damp(groupRef.current.rotation.x, my * 0.15, 3, delta);
-      groupRef.current.rotation.z = THREE.MathUtils.damp(groupRef.current.rotation.z, -mx * 0.05, 3, delta);
-    }
   });
 
   const scale = 1.6 / data.radius;
@@ -187,12 +187,26 @@ function BaseGrid() {
   );
 }
 
+function CameraReset({ trigger }: { trigger: number }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(0, 0.6, 2.6);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  }, [camera, trigger]);
+  return null;
+}
+
 export default function ParticleScene({
   data,
   assemble = 1,
+  replay = 0,
+  viewReset = 0,
 }: {
   data: PointCloudData;
   assemble?: number;
+  replay?: number;
+  viewReset?: number;
 }) {
   return (
     <Canvas
@@ -200,8 +214,20 @@ export default function ParticleScene({
       gl={{ antialias: true, alpha: true }}
       style={{ background: "transparent" }}
     >
-      <ParticleModel data={data} assemble={assemble} />
+      <ParticleModel data={data} assemble={assemble} replay={replay} />
       <BaseGrid />
+      <CameraReset trigger={viewReset} />
+      <OrbitControls
+        key={viewReset}
+        makeDefault
+        enableDamping
+        dampingFactor={0.08}
+        enablePan={false}
+        minDistance={1.6}
+        maxDistance={5.5}
+        minPolarAngle={0.2}
+        maxPolarAngle={Math.PI - 0.2}
+      />
     </Canvas>
   );
 }
