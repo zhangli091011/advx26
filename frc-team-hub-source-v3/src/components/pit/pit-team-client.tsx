@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Panel, PitShell } from "@/components/pit/pit-shell";
+import { StepViewer } from "@/components/pit/step-viewer";
 
 const CAPS = [
   { t: "自动阶段", d: "A-3 程序 · 3 枚得分 · 命中率 92%", col: "var(--pit-accent)" },
@@ -24,35 +25,19 @@ export function PitTeamClient() {
 
   return (
     <PitShell title="TEAM SHOWCASE" active={6}>
-      {/* 形象墙 */}
-      <section className="pit-panel" style={{ left: 224, top: 96, width: 820, height: 940 }}>
+      {/* 形象墙：队号 + 粒子 3D 机器人展示 */}
+      <section className="pit-panel" style={{ left: 224, top: 96, width: 820, height: 940, position: "absolute" }}>
         <h1 className="pit-hero-num">8888</h1>
         <h2 className="pit-hero-name">星火机器人队</h2>
         <span className="pit-hero-en">SPARK ROBOTICS · SHANGHAI</span>
         {[0, 1, 2, 3].map((i) => (
           <div key={i} className="pit-hero-stripe" style={{ left: 58 + i * 8, top: 410 + i * 16, background: `rgba(255,199,0,${0.9 - i * 0.2})` }} />
         ))}
-        {/* 机器人线框（按 Figma 矢量还原的等距视图） */}
-        <svg style={{ position: "absolute", left: 180, top: 540 }} width="440" height="220" viewBox="0 0 440 220" aria-hidden>
-          <g stroke="var(--pit-accent)" strokeWidth="2" fill="none">
-            <path d="M0 60 L140 0 L440 0 L300 60 Z" />
-            <path d="M0 60 L0 180 L300 180 L300 60" />
-            <path d="M300 60 L440 0 L440 120 L300 180" />
-            <path d="M340 70 L400 35" />
-          </g>
-          <path d="M60 100 L240 100 L240 150 L60 150 Z" stroke="var(--pit-text-2)" strokeWidth="1.5" fill="none" />
-          <g stroke="var(--pit-accent)" strokeWidth="2.5" fill="none">
-            <circle cx="50" cy="185" r="28" />
-            <circle cx="150" cy="185" r="28" />
-            <circle cx="250" cy="185" r="28" />
-          </g>
-          <g stroke="var(--pit-text-2)" strokeWidth="1.5" fill="none">
-            <circle cx="50" cy="185" r="12" />
-            <circle cx="150" cy="185" r="12" />
-            <circle cx="250" cy="185" r="12" />
-          </g>
-        </svg>
-        <span className="pit-hero-robot-lb">2026 ROBOT · 「SPARK-III」</span>
+        {/* 粒子 3D 展示区（导入 STEP 实时渲染） */}
+        <div style={{ position: "absolute", left: 24, top: 480, width: 772, height: 300 }}>
+          <StepViewer />
+        </div>
+        <span className="pit-hero-robot-lb">2026 ROBOT · 「SPARK-III」· 点击右下导入 STEP 实时预览</span>
         <span className="pit-hero-record">本赛季战绩：资格赛 5 胜 2 负 · 当前排名 #7 · 最佳单场 156 分</span>
       </section>
 
