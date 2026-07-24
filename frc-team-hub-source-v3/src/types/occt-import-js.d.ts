@@ -14,15 +14,16 @@ declare module "occt-import-js" {
     meshes: OcctMesh[];
   }
 
+  interface OcctOptions {
+    locateFile?: (path: string, prefix?: string) => string;
+  }
+
   interface OcctInstance {
-    ReadStepFile(
-      content: Uint8Array,
-      params: unknown,
-    ): OcctResult;
+    ReadStepFile(content: Uint8Array, params: unknown): OcctResult;
     ReadBrepFile?(content: Uint8Array, params: unknown): OcctResult;
     ReadIgesFile?(content: Uint8Array, params: unknown): OcctResult;
   }
 
-  function occtimportjs(options?: unknown): Promise<OcctInstance>;
+  function occtimportjs(options?: OcctOptions): Promise<OcctInstance>;
   export default occtimportjs;
 }

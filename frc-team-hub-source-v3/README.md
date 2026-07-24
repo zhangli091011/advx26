@@ -2,7 +2,7 @@
 
 面向 FRC 维修区（Pit）的智能工具箱控制面板，运行于**树莓派 5 + 22" 触摸屏**，配合两个 **ESP32 分控**实现工具/零件/电源/CAN 的实时监控。
 
-终末地工业风 UI（深炭底 + 工业黄），7 个页面全部真实数据驱动（MQTT + SSE 实时推送）。
+终末地工业风 UI（深炭底 + 工业黄）。设备遥测通过 MQTT + SSE 实时推送；赛程、采购和战术分析等页面内容目前包含演示数据。
 
 ## 功能页面（`/pit`）
 
@@ -36,7 +36,16 @@ npm run dev
 # 打开 http://localhost:3000 → 自动跳转 /pit
 ```
 
-无硬件时面板显示空态与 MQTT topic 提示；连接 Broker 后数秒内切换为真实数据。
+默认无硬件时显示演示数据。设置 `SEED_DEMO_DATA=false` 后显示空态与 MQTT topic 提示；连接 Broker 后切换为真实数据。
+
+提交前运行：
+
+```bash
+npm run lint
+npm test
+npm run typecheck
+npm run build
+```
 
 ## 树莓派部署
 

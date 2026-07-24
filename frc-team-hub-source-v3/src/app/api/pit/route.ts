@@ -1,42 +1,58 @@
-import { apiError, apiSuccess } from "@/lib/api";
+import { apiError, apiSuccess, isSameOrigin } from "@/lib/api";
+import { isRecentlySeen, parsePitControl } from "@/lib/pit-control";
 import { getPitHub } from "@/lib/pit-hub";
-import { seedPitStateIfEmpty } from "@/lib/pit-seed";
+import { getPitState } from "@/lib/pit-seed";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const state = seedPitStateIfEmpty();
-  return apiSuccess(state);
+  return apiSuccess(getPitState());
 }
 
 /** 下行控制：电源开关 / 指示灯寻物 */
 export async function POST(request: Request) {
-  let body: { action?: string; target?: string; on?: boolean };
+  if (!isSameOrigin(request)) return apiError("禁止跨站控制请求", 403);
+
+  let body: unknown;
   try {
     body = await request.json();
   } catch {
     return apiError("请求格式错误", 400);
   }
   const hub = getPitHub();
+  const parsed = parsePitControl(body, {
+    channels: hub.state.channels.map((channel) => channel.id),
+    locations: [
+      ...hub.state.tools.map((tool) => tool.slot),
+      ...hub.state.compartments.map((compartment) => compartment.id),
+    ],
+    units: hub.state.units.map((unit) => unit.u),
+  });
+  if ("error" in parsed) return apiError(parsed.error, 400);
 
-  if (body.action === "power" && body.target) {
-    const ok = hub.publishControl(`power/${body.target}`, { on: Boolean(body.on) });
-    // 乐观更新本地影子
-    const ch = hub.state.channels.find((c) => c.id === body.target);
-    if (ch) ch.on = Boolean(body.on);
-    return apiSuccess({ sent: ok });
+  if (!hub.state.connection.brokerConnected) {
+    return apiError("MQTT Broker 未连接，指令未发送", 503);
   }
 
-  if (body.action === "locate" && body.target) {
-    const ok = hub.publishControl(`locate/${body.target}`, { blink: true });
-    return apiSuccess({ sent: ok });
+  const { action, target } = parsed.command;
+  let sent = false;
+  if (action === "power") {
+    if (!isRecentlySeen(hub.state.connection.deviceLastSeen.power)) {
+      return apiError("电源分控离线或数据已过期，禁止远程控制", 503);
+    }
+    sent = await hub.publishControl(`power/${target}`, { on: parsed.command.on });
+  } else if (action === "locate") {
+    if (!isRecentlySeen(hub.state.connection.deviceLastSeen.cabinet)) {
+      return apiError("储物柜分控离线或数据已过期，指令未发送", 503);
+    }
+    sent = await hub.publishControl(`locate/${target}`, { blink: true });
+  } else if (action === "locate-unit") {
+    if (!isRecentlySeen(hub.state.connection.deviceLastSeen.cabinet)) {
+      return apiError("储物柜分控离线或数据已过期，指令未发送", 503);
+    }
+    sent = await hub.publishControl(`locate-unit/${target}`, { blink: true });
   }
 
-  if (body.action === "locate-unit" && body.target) {
-    const ok = hub.publishControl(`locate-unit/${body.target}`, { blink: true });
-    return apiSuccess({ sent: ok });
-  }
-
-  return apiError("未知指令", 400);
+  return sent ? apiSuccess({ sent: true }) : apiError("MQTT 指令发送失败", 503);
 }

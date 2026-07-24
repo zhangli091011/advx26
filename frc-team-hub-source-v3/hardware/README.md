@@ -53,10 +53,17 @@
 sudo apt update && sudo apt install -y mosquitto mosquitto-clients \
   can-utils nodejs npm git
 
-# 2) MQTT Broker 允许本机连接
+# 2) MQTT Broker 账号和最小 Topic 权限
+sudo mosquitto_passwd -c /etc/mosquitto/passwd pit-device
+sudo tee /etc/mosquitto/acl <<'EOF'
+user pit-device
+topic readwrite pit/#
+EOF
 sudo tee /etc/mosquitto/conf.d/pit.conf <<'EOF'
 listener 1883 0.0.0.0
-allow_anonymous true
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+acl_file /etc/mosquitto/acl
 EOF
 sudo systemctl enable --now mosquitto
 
@@ -68,7 +75,8 @@ ip -details link show can0   # 确认 UP
 # 4) 项目
 git clone <repo> frc-team-hub && cd frc-team-hub
 npm ci && npm run build
-PIT_MQTT_URL=mqtt://127.0.0.1:1883 npm run start -- --port 3000
+SEED_DEMO_DATA=false PIT_MQTT_URL=mqtt://127.0.0.1:1883 \
+PIT_MQTT_USERNAME=pit-device PIT_MQTT_PASSWORD='<部署密码>' npm run start -- --port 3000
 
 # 5) 开机自启（systemd）
 sudo tee /etc/systemd/system/pit-os.service <<'EOF'
@@ -78,6 +86,9 @@ After=network.target mosquitto.service
 [Service]
 WorkingDirectory=/home/pi/frc-team-hub
 Environment=PIT_MQTT_URL=mqtt://127.0.0.1:1883
+Environment=PIT_MQTT_USERNAME=pit-device
+Environment=PIT_MQTT_PASSWORD=<部署密码>
+Environment=SEED_DEMO_DATA=false
 ExecStart=/usr/bin/npm run start -- --port 3000
 Restart=always
 User=pi
@@ -125,6 +136,8 @@ sudo systemctl enable --now pit-os
 | 电源 | 12V→5V 降压 | 5V/3A | 与继电器模块共地 |
 
 **强电安全**：继电器模块的强电侧必须由有资质人员接线，8 路独立保险丝（每路 ≤16A），零火线分色，外壳接地。CH4（机器人调试电源）串接触器，满足"上场前 10 分钟自动上电"的安全逻辑。
+
+软件保护不能代替保险丝、接触器和急停。当前固件实现每路 `>16A` 断电及箱内 `>60°C` 全通道断电；赛前自动上电和离场模式尚未实现。
 
 ---
 

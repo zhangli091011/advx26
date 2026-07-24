@@ -16,9 +16,11 @@ export function apiSuccess<T>(data: T, status = 200) {
 
 export function isSameOrigin(request: Request) {
   const origin = request.headers.get("origin");
-  if (!origin) return true;
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") return false;
+  if (!origin) return fetchSite === "same-origin";
   try {
-    return new URL(origin).host === request.headers.get("host");
+    return new URL(origin).origin === new URL(request.url).origin;
   } catch {
     return false;
   }

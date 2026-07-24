@@ -1,26 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { PitState } from "@/types/pit";
 
-/* 与后端 pit-hub.ts 对应的类型 */
-export type ToolState = "in" | "out" | "lost";
-export interface PitTool { slot: string; name: string; unit: string; state: ToolState; who?: string; time?: string }
-export interface RackUnit { u: string; name: string; note: string; status: string; level: "ok" | "low" | "active"; pct: number }
-export interface Compartment { id: string; label: string; qty: number; state: "ok" | "low" | "empty" | "active" }
-export interface PowerChannel { id: string; name: string; zone: string; volts: number; amps: number; watts: number; on: boolean }
-export interface Battery { id: string; pct: number; charging: boolean; volts: number }
-export interface CanDevice { id: string; name: string; model: string; mech: string; on: boolean; latencyMs: number | null; tempC: number | null; lastHeartbeat: number }
-export interface PitState {
-  updatedAt: number;
-  tools: PitTool[];
-  units: RackUnit[];
-  compartments: Compartment[];
-  channels: PowerChannel[];
-  batteries: Battery[];
-  canDevices: CanDevice[];
-  env: { tempC: number; humidity: number };
-  scanLog: Array<{ t: string; msg: string; kind: "ok" | "warn" | "err" }>;
-}
+export type { PitState, PitTool, ToolState } from "@/types/pit";
 
 /**
  * 统一数据源：优先 SSE 实时推送，失败时 3s 轮询回退。
@@ -33,6 +16,7 @@ export function usePitState(): { state: PitState | null; live: boolean } {
 
   useEffect(() => {
     let poll: number | undefined;
+    let retry: number | undefined;
     let stopped = false;
 
     async function pollOnce() {
@@ -64,7 +48,7 @@ export function usePitState(): { state: PitState | null; live: boolean } {
         pollOnce();
         poll = window.setInterval(pollOnce, 3000);
         // 30s 后尝试重建 SSE
-        window.setTimeout(() => {
+        retry = window.setTimeout(() => {
           if (!stopped) {
             window.clearInterval(poll);
             startSse();
@@ -79,6 +63,7 @@ export function usePitState(): { state: PitState | null; live: boolean } {
       stopped = true;
       esRef.current?.close();
       window.clearInterval(poll);
+      window.clearTimeout(retry);
     };
   }, []);
 
@@ -87,9 +72,11 @@ export function usePitState(): { state: PitState | null; live: boolean } {
 
 /** 下发控制指令 */
 export async function pitControl(action: string, target: string, on?: boolean) {
-  await fetch("/api/pit", {
+  const response = await fetch("/api/pit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action, target, on }),
   });
+  const result = await response.json().catch(() => null) as { error?: string } | null;
+  if (!response.ok) throw new Error(result?.error ?? "控制指令发送失败");
 }

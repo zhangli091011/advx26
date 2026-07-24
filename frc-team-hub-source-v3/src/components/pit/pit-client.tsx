@@ -14,6 +14,7 @@ const NAV = [
   { zh: "电源控制", en: "POWER", icon: "power", href: "/pit/power" },
   { zh: "战队展示", en: "TEAM", icon: "team", href: "/pit/team" },
 ];
+const EMPTY_TOOLS: PitTool[] = [];
 
 const SCHEDULE = [
   { m: "Q-38", t: "10:24", pos: "BLUE 1", kind: "blue" },
@@ -81,20 +82,25 @@ function Panel({
 
 export function PitClient() {
   const { state, live } = usePitState();
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   const [locating, setLocating] = useState<PitTool | null>(null);
 
   useEffect(() => {
+    const initial = window.setTimeout(() => setNow(new Date()), 0);
     const t = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(t);
+    };
   }, []);
 
-  const clock = useMemo(
-    () => [now.getHours(), now.getMinutes(), now.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":"),
-    [now],
-  );
+  const clock = useMemo(() => {
+    if (!now) return "--:--:--";
+    return [now.getHours(), now.getMinutes(), now.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
+  }, [now]);
 
   const countdown = useMemo(() => {
+    if (!now) return "08:47";
     const target = new Date(now);
     target.setHours(14, 40, 0, 0);
     let diff = Math.floor((target.getTime() - now.getTime()) / 1000);
@@ -103,10 +109,11 @@ export function PitClient() {
   }, [now]);
 
   /* 真实数据（无数据时显示空态） */
-  const tools = state?.tools ?? [];
+  const tools = state?.tools ?? EMPTY_TOOLS;
   const units = state?.units ?? [];
   const channels = state?.channels ?? [];
   const canDevices = state?.canDevices ?? [];
+  const brokerOnline = live && state?.connection.brokerConnected === true;
 
   const stats = useMemo(() => ({
     inCount: tools.filter((t) => t.state === "in").length,
@@ -137,8 +144,8 @@ export function PitClient() {
         <div className="pit-subtitle">智能工具箱控制系统  V2.4.1</div>
         <div className="pit-chips">
           <div className="pit-chip">
-            <i style={{ background: live ? "var(--pit-ok)" : "var(--pit-err)" }} />
-            <small>NET</small><strong>{live ? "ONLINE" : "OFFLINE"}</strong>
+            <i style={{ background: brokerOnline ? "var(--pit-ok)" : "var(--pit-err)" }} />
+            <small>MQTT</small><strong>{brokerOnline ? "ONLINE" : "OFFLINE"}</strong>
           </div>
           <div className="pit-chip">
             <i style={{ background: "var(--pit-accent)" }} />
@@ -355,8 +362,8 @@ export function PitClient() {
         <span className="live"><i>●</i> LIVE  Q-38  RED 128 — 121 BLUE</span>
         <span className="ai">
           {state?.scanLog[0]
-            ? `│  最近扫码：${state.scanLog[0].msg}  │  NET ${live ? "在线" : "离线"}`
-            : "│  等待视觉识别扫码事件…"}
+            ? `│  最近扫码：${state.scanLog[0].msg}  │  API ${live ? "在线" : "离线"} · MQTT ${brokerOnline ? "在线" : "离线"}`
+            : `│  等待视觉识别扫码事件…  │  API ${live ? "在线" : "离线"} · MQTT ${brokerOnline ? "在线" : "离线"}`}
         </span>
       </div>
 

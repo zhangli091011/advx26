@@ -6,13 +6,15 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "mqtt": "^5.15.2",
-    "next": "16.2.10",
+    "next": "16.2.11",
     "occt-import-js": "^0.0.23",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -25,8 +27,9 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.185.1",
     "eslint": "^9",
-    "eslint-config-next": "16.2.10",
+    "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

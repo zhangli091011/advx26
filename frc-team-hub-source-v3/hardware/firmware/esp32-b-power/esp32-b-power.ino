@@ -13,6 +13,8 @@ const char* WIFI_SSID   = "PIT-NET";
 const char* WIFI_PASS   = "your-password";
 const char* MQTT_HOST   = "192.168.1.10";
 const uint16_t MQTT_PORT = 1883;
+const char* MQTT_USER   = "pit-device";
+const char* MQTT_PASS   = "change-this-password";
 const char* DEVICE_ID   = "esp32-b";
 
 /* ---------- 引脚映射（见 hardware/README.md §4） ---------- */
@@ -30,6 +32,7 @@ const char* CH_ZONES[8] = {
   "工作台", "充电区", "算法位", "检修位", "箱体", "箱体", "工作台", "—",
 };
 const float CH_VOLTS[8] = { 220, 24, 20, 12, 12, 12, 20, 0 };
+const float MAX_CURRENT_AMPS = 16.0f;
 
 WiFiClient espClient;
 PubSubClient mqtt(espClient);
@@ -62,6 +65,10 @@ void applyRelay(uint8_t ch) {
 
 void publishChannel(uint8_t ch) {
   float amps = chState[ch] ? readCurrent(ch) : 0.0f;
+  if (chState[ch] && amps > MAX_CURRENT_AMPS) {
+    chState[ch] = false;
+    applyRelay(ch);
+  }
   float watts = amps * CH_VOLTS[ch];
   char topic[64];
   snprintf(topic, sizeof(topic), "pit/esp32-b/power/CH%d", ch + 1);
@@ -124,7 +131,7 @@ void onMqtt(char* topic, byte* payload, unsigned int len) {
 
 void reconnect() {
   while (!mqtt.connected()) {
-    if (mqtt.connect(DEVICE_ID, nullptr, nullptr, "pit/esp32-b/status", 1, true, "offline")) {
+    if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS, "pit/esp32-b/status", 1, true, "offline")) {
       mqtt.publish("pit/esp32-b/status", "online", true);
       mqtt.subscribe("pit/control/power/#");
     } else {

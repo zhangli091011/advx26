@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import { Panel, PitShell } from "@/components/pit/pit-shell";
 import { pitControl, usePitState } from "@/components/pit/use-pit-state";
+import type { PitTool } from "@/types/pit";
+
+const EMPTY_TOOLS: PitTool[] = [];
 
 const COLS = [
   { label: "工具名称", x: 24 },
@@ -25,7 +28,7 @@ export function PitToolsClient() {
   const [unit, setUnit] = useState("");
   const [query, setQuery] = useState("");
 
-  const allTools = state?.tools ?? [];
+  const allTools = state?.tools ?? EMPTY_TOOLS;
   const units = state?.units ?? [];
 
   const tools = useMemo(

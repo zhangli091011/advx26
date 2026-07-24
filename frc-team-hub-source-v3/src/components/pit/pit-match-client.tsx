@@ -36,13 +36,18 @@ const SCH_COLS = [
 ];
 
 export function PitMatchClient() {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    const initial = window.setTimeout(() => setNow(new Date()), 0);
     const t = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(t);
+    };
   }, []);
 
   const countdown = useMemo(() => {
+    if (!now) return "08:47";
     const target = new Date(now);
     target.setHours(14, 40, 0, 0);
     let diff = Math.floor((target.getTime() - now.getTime()) / 1000);

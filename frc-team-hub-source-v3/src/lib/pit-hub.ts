@@ -2,6 +2,16 @@ import "server-only";
 
 import mqtt from "mqtt";
 import { EventEmitter } from "node:events";
+import type {
+  Battery,
+  Compartment,
+  PitState,
+  PitTool,
+  PowerChannel,
+  RackUnit,
+} from "@/types/pit";
+
+export type { PitState } from "@/types/pit";
 
 /**
  * PIT-OS 实时数据中心
@@ -20,77 +30,16 @@ import { EventEmitter } from "node:events";
  *   pit/control/{target}            → 下行控制指令（开关/指示灯/继电器）
  */
 
-export type ToolState = "in" | "out" | "lost";
-export interface PitTool {
-  slot: string;
-  name: string;
-  unit: string;
-  state: ToolState;
-  who?: string;
-  time?: string;
-  qr?: string; // 二维码内容
-}
-
-export interface RackUnit {
-  u: string;
-  name: string;
-  note: string;
-  status: string;
-  level: "ok" | "low" | "active";
-  pct: number;
-}
-
-export interface Compartment {
-  id: string;
-  label: string;
-  qty: number;
-  state: "ok" | "low" | "empty" | "active";
-}
-
-export interface PowerChannel {
-  id: string;
-  name: string;
-  zone: string;
-  volts: number;
-  amps: number;
-  watts: number;
-  on: boolean;
-}
-
-export interface Battery {
-  id: string;
-  pct: number;
-  charging: boolean;
-  volts: number;
-}
-
-export interface CanDevice {
-  id: string;
-  name: string;
-  model: string;
-  mech: string;
-  on: boolean;
-  latencyMs: number | null;
-  tempC: number | null;
-  lastHeartbeat: number;
-}
-
-export interface PitState {
-  updatedAt: number;
-  tools: PitTool[];
-  units: RackUnit[];
-  compartments: Compartment[];
-  channels: PowerChannel[];
-  batteries: Battery[];
-  canDevices: CanDevice[];
-  env: { tempC: number; humidity: number };
-  scanLog: Array<{ t: string; msg: string; kind: "ok" | "warn" | "err" }>;
-}
-
 /* ---------------- 初始空状态（无硬件时回退） ---------------- */
 function emptyState(): PitState {
   return {
     updatedAt: 0,
+    source: "empty",
+    connection: {
+      brokerConnected: false,
+      lastMessageAt: null,
+      deviceLastSeen: { cabinet: null, power: null, can: null, vision: null },
+    },
     tools: [],
     units: [],
     compartments: [],
@@ -119,14 +68,26 @@ class PitHub extends EventEmitter {
     try {
       this.client = mqtt.connect(url, {
         clientId: `pit-hub-${Math.random().toString(16).slice(2, 8)}`,
+        username: process.env.PIT_MQTT_USERNAME || undefined,
+        password: process.env.PIT_MQTT_PASSWORD || undefined,
         reconnectPeriod: 3000,
         connectTimeout: 4000,
       });
       this.client.on("connect", () => {
-        this.client?.subscribe("pit/#", { qos: 1 });
-        this.emit("broker", true);
+        this.state.connection.brokerConnected = true;
+        this.client?.subscribe([
+          "pit/esp32-a/#",
+          "pit/esp32-b/#",
+          "pit/can/#",
+          "pit/vision/#",
+        ], { qos: 1 });
+        this.emit("update", this.state);
       });
-      this.client.on("close", () => this.emit("broker", false));
+      this.client.on("close", () => {
+        if (!this.state.connection.brokerConnected) return;
+        this.state.connection.brokerConnected = false;
+        this.emit("update", this.state);
+      });
       this.client.on("error", () => {
         /* broker 未启动时保持静默，前端走空状态 */
       });
@@ -137,25 +98,49 @@ class PitHub extends EventEmitter {
   }
 
   private onMessage(topic: string, payload: Buffer) {
+    if (payload.length > 64 * 1024) return;
+    const parts = topic.split("/");
+    const source = parts[1];
+    if (!source || !["esp32-a", "esp32-b", "can", "vision"].includes(source)) return;
+
+    const now = Date.now();
+    if (parts[2] === "status") {
+      const seenAt = payload.toString().trim() === "online" ? now : null;
+      if (source === "esp32-a") this.state.connection.deviceLastSeen.cabinet = seenAt;
+      else if (source === "esp32-b") this.state.connection.deviceLastSeen.power = seenAt;
+      this.markUpdated(now);
+      return;
+    }
+
     let data: unknown;
     try {
       data = JSON.parse(payload.toString());
     } catch {
       return;
     }
-    const parts = topic.split("/");
-    this.state.updatedAt = Date.now();
+    if (source === "esp32-a") this.state.connection.deviceLastSeen.cabinet = now;
+    else if (source === "esp32-b") this.state.connection.deviceLastSeen.power = now;
+    else if (source === "can") this.state.connection.deviceLastSeen.can = now;
+    else this.state.connection.deviceLastSeen.vision = now;
+    let handled = false;
+    if (source === "esp32-a") handled = this.handleCabinet(parts, data);
+    else if (source === "esp32-b") handled = this.handlePower(parts, data);
+    else if (source === "can") handled = this.handleCan(parts, data);
+    else handled = this.handleVision(parts, data);
+    if (handled) this.markUpdated(now);
+  }
 
-    if (parts[1] === "esp32-a") this.handleCabinet(parts, data);
-    else if (parts[1] === "esp32-b") this.handlePower(parts, data);
-    else if (parts[1] === "can") this.handleCan(parts, data);
-    else if (parts[1] === "vision") this.handleVision(parts, data);
+  private markUpdated(now: number) {
+    this.state.updatedAt = now;
+    this.state.source = "live";
+    this.state.connection.lastMessageAt = now;
     this.emit("update", this.state);
   }
 
   /* ESP32-A：16U 储存柜（工具位 / 储物单元 / 格位） */
   private handleCabinet(parts: string[], data: unknown) {
-    const d = data as Record<string, unknown>;
+    const d = asRecord(data);
+    if (!d) return false;
     if (parts[2] === "tools" && parts[3]) {
       const slot = parts[3];
       const idx = this.state.tools.findIndex((t) => t.slot === slot);
@@ -163,10 +148,10 @@ class PitHub extends EventEmitter {
         slot,
         name: String(d.name ?? slot),
         unit: String(d.unit ?? slot.split("-")[0]),
-        state: (d.state as ToolState) ?? "in",
-        who: d.who as string | undefined,
-        time: d.time as string | undefined,
-        qr: d.qr as string | undefined,
+        state: oneOf(d.state, ["in", "out", "lost"] as const, "in"),
+        who: optionalText(d.who),
+        time: optionalText(d.time),
+        qr: optionalText(d.qr),
       };
       if (idx >= 0) this.state.tools[idx] = tool;
       else this.state.tools.push(tool);
@@ -179,8 +164,8 @@ class PitHub extends EventEmitter {
         name: String(d.name ?? u),
         note: String(d.note ?? ""),
         status: String(d.status ?? ""),
-        level: (d.level as RackUnit["level"]) ?? "ok",
-        pct: Number(d.pct ?? 0),
+        level: oneOf(d.level, ["ok", "low", "active"] as const, "ok"),
+        pct: finiteNumber(d.pct, 0, 0, 100),
       };
       if (idx >= 0) this.state.units[idx] = unit;
       else this.state.units.push(unit);
@@ -191,17 +176,19 @@ class PitHub extends EventEmitter {
       const comp: Compartment = {
         id,
         label: String(d.label ?? id),
-        qty: Number(d.qty ?? 0),
-        state: (d.state as Compartment["state"]) ?? "ok",
+        qty: finiteNumber(d.qty, 0, 0, 1_000_000),
+        state: oneOf(d.state, ["ok", "low", "empty", "active"] as const, "ok"),
       };
       if (idx >= 0) this.state.compartments[idx] = comp;
       else this.state.compartments.push(comp);
-    }
+    } else return false;
+    return true;
   }
 
   /* ESP32-B：电源配电箱（通道 / 电池 / 环境） */
   private handlePower(parts: string[], data: unknown) {
-    const d = data as Record<string, unknown>;
+    const d = asRecord(data);
+    if (!d) return false;
     if (parts[2] === "power" && parts[3]) {
       const id = parts[3];
       const idx = this.state.channels.findIndex((c) => c.id === id);
@@ -209,10 +196,10 @@ class PitHub extends EventEmitter {
         id,
         name: String(d.name ?? id),
         zone: String(d.zone ?? ""),
-        volts: Number(d.volts ?? 0),
-        amps: Number(d.amps ?? 0),
-        watts: Number(d.watts ?? 0),
-        on: Boolean(d.on),
+        volts: finiteNumber(d.volts, 0, 0, 500),
+        amps: finiteNumber(d.amps, 0, 0, 100),
+        watts: finiteNumber(d.watts, 0, 0, 50_000),
+        on: d.on === true,
       };
       if (idx >= 0) this.state.channels[idx] = ch;
       else this.state.channels.push(ch);
@@ -222,51 +209,82 @@ class PitHub extends EventEmitter {
       const idx = this.state.batteries.findIndex((b) => b.id === id);
       const bat: Battery = {
         id,
-        pct: Number(d.pct ?? 0),
-        charging: Boolean(d.charging),
-        volts: Number(d.volts ?? 0),
+        pct: finiteNumber(d.pct, 0, 0, 100),
+        charging: d.charging === true,
+        volts: finiteNumber(d.volts, 0, 0, 100),
       };
       if (idx >= 0) this.state.batteries[idx] = bat;
       else this.state.batteries.push(bat);
       this.state.batteries.sort((a, b) => a.id.localeCompare(b.id));
     } else if (parts[2] === "env") {
-      this.state.env = { tempC: Number(d.tempC ?? 0), humidity: Number(d.humidity ?? 0) };
-    }
+      this.state.env = {
+        tempC: finiteNumber(d.tempC, 0, -50, 150),
+        humidity: finiteNumber(d.humidity, 0, 0, 100),
+      };
+    } else return false;
+    return true;
   }
 
   /* 机器人 CAN（来自 USB-CAN 适配器 + TunerX 服务） */
   private handleCan(parts: string[], data: unknown) {
-    if (parts[2] !== "devices" || !Array.isArray(data)) return;
-    this.state.canDevices = (data as Array<Record<string, unknown>>).map((d) => ({
+    if (parts[2] !== "devices" || !Array.isArray(data)) return false;
+    this.state.canDevices = data.slice(0, 128).filter(isRecord).map((d) => ({
       id: String(d.id ?? ""),
       name: String(d.name ?? ""),
       model: String(d.model ?? ""),
       mech: String(d.mech ?? ""),
       on: Boolean(d.on),
-      latencyMs: d.latencyMs == null ? null : Number(d.latencyMs),
-      tempC: d.tempC == null ? null : Number(d.tempC),
-      lastHeartbeat: Number(d.lastHeartbeat ?? 0),
+      latencyMs: d.latencyMs == null ? null : finiteNumber(d.latencyMs, 0, 0, 60_000),
+      tempC: d.tempC == null ? null : finiteNumber(d.tempC, 0, -50, 200),
+      lastHeartbeat: finiteNumber(d.lastHeartbeat, 0, 0, Number.MAX_SAFE_INTEGER),
     }));
+    return true;
   }
 
   /* 视觉识别扫码事件 */
   private handleVision(_parts: string[], data: unknown) {
-    const d = data as Record<string, unknown>;
+    const d = asRecord(data);
+    if (!d) return false;
     const entry = {
       t: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-      msg: String(d.msg ?? ""),
-      kind: (d.kind as "ok" | "warn" | "err") ?? "ok",
+      msg: String(d.msg ?? "").slice(0, 500),
+      kind: oneOf(d.kind, ["ok", "warn", "err"] as const, "ok"),
     };
     this.state.scanLog.unshift(entry);
     this.state.scanLog = this.state.scanLog.slice(0, 20);
+    return true;
   }
 
   /** 下行控制：发布 MQTT 指令给分控 */
-  publishControl(target: string, payload: Record<string, unknown>) {
-    if (!this.client) return false;
-    this.client.publish(`pit/control/${target}`, JSON.stringify(payload), { qos: 1 });
-    return true;
+  publishControl(target: string, payload: Record<string, unknown>): Promise<boolean> {
+    if (!this.client?.connected) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      this.client?.publish(`pit/control/${target}`, JSON.stringify(payload), { qos: 1 }, (error) => {
+        resolve(!error);
+      });
+    });
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function asRecord(value: unknown) {
+  return isRecord(value) ? value : null;
+}
+
+function optionalText(value: unknown) {
+  return typeof value === "string" ? value.slice(0, 200) : undefined;
+}
+
+function finiteNumber(value: unknown, fallback: number, min: number, max: number) {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+}
+
+function oneOf<const T extends readonly string[]>(value: unknown, choices: T, fallback: T[number]): T[number] {
+  return typeof value === "string" && choices.includes(value) ? value as T[number] : fallback;
 }
 
 export function getPitHub(): PitHub {

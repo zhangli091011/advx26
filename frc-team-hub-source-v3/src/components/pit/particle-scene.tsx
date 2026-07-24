@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas, useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { PointCloudData } from "./step-points";
 
@@ -70,11 +70,20 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
+function seededRandom(index: number) {
+  const value = Math.sin(index * 12.9898 + 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
 function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: number }) {
   const pointsRef = useRef<THREE.Points>(null);
   const groupRef = useRef<THREE.Group>(null);
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
   const assembleRef = useRef({ value: 0 });
-  assembleRef.current.value = assemble;
+
+  useEffect(() => {
+    assembleRef.current.value = assemble;
+  }, [assemble]);
 
   const { geometry, uniforms } = useMemo(() => {
     const count = data.count;
@@ -83,13 +92,13 @@ function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: num
     const r = data.radius * 2.2;
     for (let i = 0; i < count; i++) {
       // 随机散开位置（球壳分布）
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const rr = r * (0.9 + Math.random() * 0.8);
+      const theta = seededRandom(i * 4) * Math.PI * 2;
+      const phi = Math.acos(2 * seededRandom(i * 4 + 1) - 1);
+      const rr = r * (0.9 + seededRandom(i * 4 + 2) * 0.8);
       scatter[i * 3] = rr * Math.sin(phi) * Math.cos(theta);
       scatter[i * 3 + 1] = rr * Math.cos(phi);
       scatter[i * 3 + 2] = rr * Math.sin(phi) * Math.sin(theta);
-      random[i] = Math.random();
+      random[i] = seededRandom(i * 4 + 3);
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
@@ -98,7 +107,7 @@ function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: num
 
     const u = {
       uTime: { value: 0 },
-      uAssemble: { value: assemble },
+      uAssemble: { value: 0 },
       uSize: { value: 9 },
       uPixelRatio: { value: Math.min(window.devicePixelRatio, 2) },
       uColor: { value: new THREE.Color("#ffc700") },
@@ -108,10 +117,12 @@ function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: num
   }, [data]);
 
   useFrame((state, delta) => {
-    uniforms.uTime.value = state.clock.elapsedTime;
+    const material = materialRef.current;
+    if (!material) return;
+    material.uniforms.uTime.value = state.clock.elapsedTime;
     // 平滑逼近目标聚合度（较快，1.5s 内成型）
-    uniforms.uAssemble.value = THREE.MathUtils.damp(
-      uniforms.uAssemble.value,
+    material.uniforms.uAssemble.value = THREE.MathUtils.damp(
+      material.uniforms.uAssemble.value,
       assembleRef.current.value,
       4.5,
       delta,
@@ -130,6 +141,7 @@ function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: num
     <group ref={groupRef} scale={[scale, scale, scale]}>
       <points ref={pointsRef} geometry={geometry}>
         <shaderMaterial
+          ref={materialRef}
           vertexShader={vertexShader}
           fragmentShader={fragmentShader}
           uniforms={uniforms}

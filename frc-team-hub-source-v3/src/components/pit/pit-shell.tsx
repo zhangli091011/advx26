@@ -6,18 +6,21 @@ import { useEffect, useMemo, useState } from "react";
 /* ---------- shared shell for all PIT-OS sub-pages ---------- */
 
 export function usePitClock() {
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    const initial = window.setTimeout(() => setNow(new Date()), 0);
     const t = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(t);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(t);
+    };
   }, []);
-  return useMemo(
-    () =>
-      [now.getHours(), now.getMinutes(), now.getSeconds()]
-        .map((n) => String(n).padStart(2, "0"))
-        .join(":"),
-    [now],
-  );
+  return useMemo(() => {
+    if (!now) return "--:--:--";
+    return [now.getHours(), now.getMinutes(), now.getSeconds()]
+      .map((n) => String(n).padStart(2, "0"))
+      .join(":");
+  }, [now]);
 }
 
 const NAV_ITEMS = [

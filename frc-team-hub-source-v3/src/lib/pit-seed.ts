@@ -1,17 +1,20 @@
 import "server-only";
 
-import { getPitHub, type PitState } from "@/lib/pit-hub";
+import { getPitHub } from "@/lib/pit-hub";
+import type { PitState } from "@/types/pit";
 
 /**
  * 初始库存种子 —— 仅在 MQTT 无数据时作为回退。
  * 真实部署后，ESP32 分控会在数秒内用真实状态覆盖这些数据。
  */
-export function seedPitStateIfEmpty(): PitState {
+export function getPitState(): PitState {
   const hub = getPitHub();
-  if (hub.state.updatedAt > 0) return hub.state;
+  if (hub.state.source === "live" || process.env.SEED_DEMO_DATA !== "true") return hub.state;
 
-  hub.state = {
+  return {
     updatedAt: Date.now(),
+    source: "demo",
+    connection: hub.state.connection,
     tools: [
       { slot: "U1-01", name: "内六角套装 1.5-10mm", unit: "U1", state: "in" },
       { slot: "U1-02", name: "尖嘴钳 6寸", unit: "U1", state: "in" },
@@ -80,5 +83,4 @@ export function seedPitStateIfEmpty(): PitState {
       { t: "13:58:42", msg: "张工 借出「活动扳手 8寸」", kind: "warn" },
     ],
   };
-  return hub.state;
 }

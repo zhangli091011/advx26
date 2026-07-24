@@ -5,6 +5,7 @@ PIT-OS 视觉扫码服务 — 工具二维码入库/借出识别
 识别二维码（内容如 TOOL-U1-03）→ 发布 MQTT 事件。
 依赖：opencv-python, pyzbar, paho-mqtt（libzbar0）
 """
+import os
 import time
 import cv2
 import paho.mqtt.client as mqtt
@@ -12,6 +13,8 @@ from pyzbar.pyzbar import decode
 
 MQTT_HOST = "127.0.0.1"
 MQTT_PORT = 1883
+MQTT_USER = os.environ.get("PIT_MQTT_USERNAME")
+MQTT_PASS = os.environ.get("PIT_MQTT_PASSWORD")
 CAMERA_INDEX = 0
 DEBOUNCE_SEC = 2.0  # 同一码防抖
 
@@ -28,6 +31,8 @@ TOOL_DB = {
 }
 
 client = mqtt.Client(client_id="pit-vision")
+if MQTT_USER:
+    client.username_pw_set(MQTT_USER, MQTT_PASS)
 client.connect(MQTT_HOST, MQTT_PORT, 60)
 client.loop_start()
 

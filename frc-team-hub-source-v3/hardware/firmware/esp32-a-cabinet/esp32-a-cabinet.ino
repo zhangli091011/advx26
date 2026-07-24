@@ -13,6 +13,8 @@ const char* WIFI_SSID   = "PIT-NET";
 const char* WIFI_PASS   = "your-password";
 const char* MQTT_HOST   = "192.168.1.10";   // 树莓派 IP
 const uint16_t MQTT_PORT = 1883;
+const char* MQTT_USER   = "pit-device";
+const char* MQTT_PASS   = "change-this-password";
 const char* DEVICE_ID   = "esp32-a";
 
 /* ---------- 引脚映射（见 hardware/README.md §3） ---------- */
@@ -111,7 +113,7 @@ void onMqtt(char* topic, byte* payload, unsigned int len) {
 
 void reconnect() {
   while (!mqtt.connected()) {
-    if (mqtt.connect(DEVICE_ID, nullptr, nullptr, "pit/esp32-a/status", 1, true, "offline")) {
+    if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS, "pit/esp32-a/status", 1, true, "offline")) {
       publish("pit/esp32-a/status", "online");
       mqtt.subscribe("pit/control/locate/#");
       mqtt.subscribe("pit/control/locate-unit/#");

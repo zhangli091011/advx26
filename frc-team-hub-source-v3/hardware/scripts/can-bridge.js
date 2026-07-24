@@ -30,7 +30,11 @@ const DEVICE_MAP = {
 // 运行时状态：devId → { lastSeen, latencyMs, tempC }
 const runtime = {};
 
-const client = mqtt.connect(MQTT_URL, { clientId: "pit-can-bridge" });
+const client = mqtt.connect(MQTT_URL, {
+  clientId: "pit-can-bridge",
+  username: process.env.PIT_MQTT_USERNAME,
+  password: process.env.PIT_MQTT_PASSWORD,
+});
 
 let channel = null;
 try {

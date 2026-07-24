@@ -16,6 +16,18 @@ export interface PointCloudData {
   radius: number;
 }
 
+function estimateSize(meshes: Array<{ attributes: { position: { array: ArrayLike<number> } } }>) {
+  const box = new THREE.Box3();
+  const point = new THREE.Vector3();
+  for (const mesh of meshes) {
+    const positions = mesh.attributes.position.array;
+    for (let i = 0; i < positions.length; i += 3) {
+      box.expandByPoint(point.set(positions[i], positions[i + 1], positions[i + 2]));
+    }
+  }
+  return box.isEmpty() ? 0 : box.getSize(point).length();
+}
+
 /** 在三角形表面做面积加权均匀采样 */
 function sampleTriangle(
   a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3,
@@ -40,11 +52,27 @@ export async function stepToPointCloud(
   targetPoints = 22000,
 ): Promise<PointCloudData> {
   const buffer = await file.arrayBuffer();
-  const occt = await occtimportjs();
-  const result = occt.ReadStepFile(new Uint8Array(buffer), null);
+  // 从 public/wasm/ 同源加载 WASM，避免 node_modules 路径 404
+  const occt = await occtimportjs({
+    locateFile: (path) => (path.endsWith(".wasm") ? "/wasm/occt-import-js.wasm" : path),
+  });
 
-  if (!result.success || result.meshes.length === 0) {
-    throw new Error("STEP 解析失败或文件中无几何体");
+  // 先按毫米解析；若包围盒异常大（>10m，说明是英寸/其他单位被误读），改用自适应单位重试
+  let result = occt.ReadStepFile(new Uint8Array(buffer), null);
+  if (result.success && result.meshes.length > 0) {
+    const est = estimateSize(result.meshes);
+    if (est > 10000) {
+      // 尺寸离谱 → 可能是英寸模型按毫米读出，重新按英寸解析
+      const retry = occt.ReadStepFile(new Uint8Array(buffer), { linearUnit: "inch" });
+      if (retry.success) result = retry;
+    }
+  }
+
+  if (!result.success) {
+    throw new Error("STEP 解析失败：文件格式不受支持或已损坏");
+  }
+  if (!result.meshes || result.meshes.length === 0) {
+    throw new Error("STEP 已读取但无几何体（可能是空装配或仅含基准）");
   }
 
   // 合并所有 mesh 的三角形

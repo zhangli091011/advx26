@@ -1,25 +1,37 @@
 "use client";
 
-import { useMemo } from "react";
+import { useState } from "react";
 import { Panel, PitShell } from "@/components/pit/pit-shell";
 import { pitControl, usePitState } from "@/components/pit/use-pit-state";
 
 const RULES = [
-  { t: "⚡ 过流保护", d: "任意通道 > 16A 自动断电并告警", s: "启用", col: "var(--pit-ok)" },
-  { t: "🌡 温度监控", d: "箱内 > 45°C 启动风扇 / > 60°C 断电", s: "启用", col: "var(--pit-ok)" },
-  { t: "⏱ 自动策略", d: "比赛上场前 10 分钟：自动开启机器人调试电源 + 检修位照明", s: "启用", col: "var(--pit-ok)" },
-  { t: "🔌 离场模式", d: "一键关闭全部通道（保留充电器 + 安防）", s: "手动触发", col: "var(--pit-warn)" },
+  { t: "过流保护", d: "任意通道 > 16A 由分控立即断电", s: "固件启用", col: "var(--pit-ok)" },
+  { t: "温度监控", d: "箱内 > 60°C 由分控关闭全部通道", s: "固件启用", col: "var(--pit-ok)" },
+  { t: "自动策略", d: "赛前自动上电策略尚未接入赛事数据", s: "未配置", col: "var(--pit-warn)" },
+  { t: "离场模式", d: "批量关闭与保留通道策略尚未实现", s: "未配置", col: "var(--pit-warn)" },
 ];
 
 const LIMIT = 1500;
 
 export function PitPowerClient() {
   const { state } = usePitState();
+  const [controlError, setControlError] = useState<string | null>(null);
   const channels = state?.channels ?? [];
   const batteries = state?.batteries ?? [];
 
-  const total = useMemo(() => channels.reduce((s, c) => s + (c.on ? c.watts : 0), 0), [channels]);
+  const total = channels.reduce((sum, channel) => sum + (channel.on ? channel.watts : 0), 0);
   const pct = Math.round((total / LIMIT) * 100);
+  const powerOnline = state?.connection.brokerConnected === true
+    && state.connection.deviceLastSeen.power !== null;
+
+  async function togglePower(id: string, on: boolean) {
+    setControlError(null);
+    try {
+      await pitControl("power", id, on);
+    } catch (error) {
+      setControlError(error instanceof Error ? error.message : "控制指令发送失败");
+    }
+  }
 
   return (
     <PitShell title="POWER CONTROL" active={5}>
@@ -36,7 +48,8 @@ export function PitPowerClient() {
               type="button"
               className={`pit-toggle lg ${c.on ? "on" : ""}`}
               aria-label={`${c.name} 电源开关`}
-              onClick={() => void pitControl("power", c.id, !c.on)}
+              disabled={!powerOnline}
+              onClick={() => void togglePower(c.id, !c.on)}
             >
               <i />
             </button>
@@ -45,6 +58,11 @@ export function PitPowerClient() {
         {channels.length === 0 ? (
           <div style={{ position: "absolute", left: 24, top: 200, color: "var(--pit-text-2)", fontSize: 13 }}>
             等待配电箱数据…（pit/esp32-b/power/*）
+          </div>
+        ) : null}
+        {controlError ? (
+          <div role="alert" style={{ position: "absolute", right: 24, top: 22, color: "var(--pit-err)", fontSize: 12 }}>
+            {controlError}
           </div>
         ) : null}
       </Panel>
