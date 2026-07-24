@@ -1,0 +1,943 @@
+/* PIT-OS — 22" toolbox panel UI (Endfield industrial style)
+   Scoped under .pit-root, faithful to Figma node 3:2 (Screen / Main Dashboard 1920x1080) */
+
+.pit-root {
+  --pit-bg: #0d0e10;
+  --pit-panel: #141619;
+  --pit-panel-2: #191b1e;
+  --pit-line: #383b40;
+  --pit-accent: #ffc700;
+  --pit-text: #e8ebf0;
+  --pit-text-2: #878f9c;
+  --pit-ok: #4dd973;
+  --pit-err: #f24d40;
+  --pit-warn: #ff8c1a;
+  --pit-blue: #408cff;
+  --pit-red: #f2594d;
+  --pit-dark: #0d0d0f;
+  --font-display: "Rajdhani", "Noto Sans SC", sans-serif;
+  --font-tech: "Chakra Petch", "IBM Plex Mono", monospace;
+  --font-zh: "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+
+  min-height: 100vh;
+  background: var(--pit-bg);
+  color: var(--pit-text);
+  font-family: var(--font-zh);
+  overflow-x: auto;
+}
+
+.pit-root button { font: inherit; cursor: pointer; }
+
+.pit-stage {
+  position: relative;
+  width: 1920px;
+  min-width: 1920px;
+  height: 1080px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--pit-bg);
+}
+
+/* ---------- background deco ---------- */
+.pit-deco-stripe {
+  position: absolute;
+  width: 300px; height: 3px;
+  background: rgba(255, 199, 0, 0.06);
+  transform: rotate(-35deg);
+}
+.pit-corner {
+  position: absolute;
+  width: 26px; height: 26px;
+}
+.pit-corner::before,
+.pit-corner::after {
+  content: "";
+  position: absolute;
+  background: var(--pit-accent);
+}
+.pit-corner.tl::before { inset: 0 auto auto 0; width: 26px; height: 3px; }
+.pit-corner.tl::after  { inset: 0 auto auto 0; width: 3px; height: 26px; }
+.pit-corner.tr::before { inset: 0 0 auto auto; width: 26px; height: 3px; }
+.pit-corner.tr::after  { inset: 0 0 auto auto; width: 3px; height: 26px; }
+.pit-corner.bl::before { inset: auto auto 0 0; width: 26px; height: 3px; }
+.pit-corner.bl::after  { inset: auto auto 0 0; width: 3px; height: 26px; }
+.pit-corner.br::before { inset: auto 0 0 auto; width: 26px; height: 3px; }
+.pit-corner.br::after  { inset: auto 0 0 auto; width: 3px; height: 26px; }
+
+.pit-ticks { position: absolute; display: flex; gap: 12px; }
+.pit-ticks i { display: block; width: 2px; height: 5px; background: rgba(56, 59, 64, 0.8); }
+.pit-ticks i:nth-child(4n + 1) { height: 10px; }
+
+/* ---------- header ---------- */
+.pit-header {
+  position: absolute; inset: 0 0 auto 0;
+  height: 72px;
+  background: var(--pit-panel);
+  border-bottom: 2px solid var(--pit-line);
+}
+.pit-header::after {
+  content: "";
+  position: absolute; left: 40px; bottom: -2px;
+  width: 220px; height: 2px;
+  background: var(--pit-accent);
+}
+.pit-brand {
+  position: absolute; left: 40px; top: 16px;
+  width: 64px; height: 40px;
+  display: grid; place-items: center;
+  background: var(--pit-accent);
+  color: var(--pit-dark);
+  font-family: var(--font-tech); font-weight: 700; font-size: 22px;
+}
+.pit-title {
+  position: absolute; left: 128px; top: 14px;
+  font-family: var(--font-display); font-weight: 700; font-size: 26px;
+  letter-spacing: 3px; white-space: nowrap;
+}
+.pit-subtitle {
+  position: absolute; left: 130px; top: 44px;
+  color: var(--pit-text-2); font-size: 13px; font-weight: 500; white-space: pre;
+}
+.pit-chips {
+  position: absolute; right: 40px; top: 18px;
+  display: flex; align-items: flex-start; gap: 36px;
+}
+.pit-chip { position: relative; padding-left: 14px; }
+.pit-chip i {
+  position: absolute; left: 0; top: 6px;
+  width: 8px; height: 8px; border-radius: 50%;
+}
+.pit-chip small {
+  display: block;
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 500; font-size: 12px; letter-spacing: 1px;
+}
+.pit-chip strong {
+  display: block; margin-top: 3px;
+  font-family: var(--font-tech); font-weight: 600; font-size: 15px;
+}
+.pit-clock {
+  color: var(--pit-accent);
+  font-family: var(--font-tech); font-weight: 700; font-size: 26px;
+  align-self: center;
+}
+
+/* ---------- nav rail ---------- */
+.pit-nav {
+  position: absolute; left: 0; top: 72px;
+  width: 200px; height: 1008px;
+  background: var(--pit-panel);
+  border-right: 2px solid var(--pit-line);
+}
+.pit-nav-item {
+  position: relative;
+  width: 200px; height: 64px;
+  display: grid;
+  grid-template-columns: 62px 1fr;
+  align-content: center;
+  border: 0; background: transparent;
+  text-align: left;
+}
+.pit-nav-item:first-child { margin-top: 36px; }
+.pit-nav-item .pit-nav-ico { justify-self: center; width: 20px; height: 20px; }
+.pit-nav-item .zh { color: var(--pit-text-2); font-size: 15px; font-weight: 500; white-space: nowrap; }
+.pit-nav-item .en {
+  margin-top: 6px;
+  color: rgba(135, 143, 156, 0.7);
+  font-family: var(--font-tech); font-weight: 500; font-size: 10px; letter-spacing: 1.5px;
+}
+.pit-nav-item.active { background: var(--pit-panel-2); }
+.pit-nav-item.active::before {
+  content: "";
+  position: absolute; left: 0; top: 0;
+  width: 4px; height: 64px;
+  background: var(--pit-accent);
+}
+.pit-nav-item.active .zh { color: var(--pit-text); }
+.pit-nav-item.active .en { color: var(--pit-accent); }
+.pit-nav-item:hover:not(.active) { background: rgba(255, 255, 255, 0.02); }
+.pit-mode-tag {
+  position: absolute; left: 20px; bottom: 26px;
+  width: 160px; height: 44px;
+  border: 1px solid var(--pit-line);
+}
+.pit-mode-tag strong {
+  position: absolute; left: 0; right: 0; top: 7px;
+  text-align: center;
+  color: var(--pit-accent);
+  font-family: var(--font-tech); font-weight: 600; font-size: 13px; letter-spacing: 2px;
+}
+.pit-mode-tag span { position: absolute; left: 0; right: 0; top: 25px; text-align: center; color: var(--pit-text-2); font-size: 10px; }
+
+/* ---------- panel chrome ---------- */
+.pit-panel {
+  position: absolute;
+  background: var(--pit-panel);
+  border: 1px solid var(--pit-line);
+  overflow: hidden;
+}
+.pit-panel-title {
+  position: absolute; left: 29px; top: 13px; margin: 0;
+  font-size: 17px; font-weight: 700; white-space: nowrap;
+}
+.pit-panel-title::before {
+  content: "";
+  position: absolute; left: -14px; top: 2px;
+  width: 6px; height: 18px;
+  background: var(--pit-accent);
+}
+.pit-panel-title-en {
+  position: absolute; top: 19px;
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 500; font-size: 10px; letter-spacing: 2px;
+  white-space: nowrap;
+}
+.pit-panel > h2 + .pit-panel-title-en { left: 0; }
+.pit-panel-divider {
+  position: absolute; left: 15px; top: 45px; right: 15px;
+  height: 1px; background: var(--pit-line);
+}
+
+/* ---------- next match ---------- */
+.pit-match-label {
+  position: absolute; left: 31px; top: 61px;
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 500; font-size: 12px; letter-spacing: 3px;
+}
+.pit-match-num {
+  position: absolute; left: 27px; top: 79px;
+  font-family: var(--font-display); font-weight: 700; font-size: 72px; line-height: 1;
+}
+.pit-countdown-label { position: absolute; left: 33px; top: 167px; color: var(--pit-text-2); font-size: 12px; }
+.pit-countdown {
+  position: absolute; left: 27px; top: 185px;
+  color: var(--pit-accent);
+  font-family: var(--font-tech); font-weight: 700; font-size: 40px; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.pit-alliance {
+  position: absolute; left: 327px; top: 69px;
+  width: 200px; height: 120px;
+  padding: 11px 13px;
+  background: rgba(242, 89, 77, 0.12);
+  border: 1px solid rgba(242, 89, 77, 0.6);
+}
+.pit-alliance strong {
+  display: block;
+  color: var(--pit-red);
+  font-family: var(--font-tech); font-weight: 700; font-size: 13px; letter-spacing: 2px;
+}
+.pit-alliance .pos { display: block; margin-top: 9px; font-size: 13px; font-weight: 500; }
+.pit-alliance .teams {
+  display: block; margin-top: 15px;
+  font-family: var(--font-tech); font-weight: 600; font-size: 16px; white-space: pre;
+}
+.pit-alliance .us { display: block; margin-top: 8px; color: var(--pit-text-2); font-size: 11px; }
+.pit-field-label { position: absolute; left: 31px; top: 247px; color: var(--pit-text-2); font-size: 11px; }
+.pit-field-cell {
+  position: absolute; top: 243px;
+  width: 56px; height: 24px;
+  display: grid; place-items: center;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 600; font-size: 11px;
+}
+.pit-field-cell.us { background: var(--pit-red); border-color: var(--pit-red); color: var(--pit-dark); }
+
+/* ---------- CAN panel ---------- */
+.pit-can-row {
+  position: absolute; left: 15px;
+  width: 508px; height: 30px;
+  display: grid;
+  grid-template-columns: 28px 64px 1fr auto;
+  align-items: center;
+}
+.pit-can-row.offline { background: rgba(242, 77, 64, 0.08); }
+.pit-can-dot { width: 9px; height: 9px; margin-left: 8px; border-radius: 50%; }
+.pit-can-id { color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; font-size: 13px; }
+.pit-can-name { font-family: var(--font-tech); font-weight: 600; font-size: 14px; white-space: pre; }
+.pit-can-status { padding-right: 12px; font-family: var(--font-tech); font-weight: 700; font-size: 12px; }
+
+/* ---------- power panel ---------- */
+.pit-pwr-row {
+  position: absolute; left: 15px;
+  width: 492px; height: 46px;
+  background: var(--pit-panel-2);
+  text-align: left;
+}
+.pit-pwr-name { position: absolute; left: 14px; top: 8px; font-size: 14px; font-weight: 500; }
+.pit-pwr-sub { position: absolute; left: 14px; top: 27px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; font-size: 10px; white-space: pre; }
+.pit-pwr-status { position: absolute; right: 76px; top: 17px; font-family: var(--font-tech); font-weight: 700; font-size: 11px; }
+.pit-toggle {
+  position: absolute; right: 14px; top: 10px;
+  width: 52px; height: 26px;
+  border: 0; border-radius: 13px;
+  background: var(--pit-line);
+  transition: background 150ms ease;
+}
+.pit-toggle.on { background: var(--pit-accent); }
+.pit-toggle i {
+  position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--pit-dark);
+  transition: left 150ms ease;
+}
+.pit-toggle.on i { left: 29px; }
+.pit-pwr-total {
+  position: absolute; left: 19px; top: 273px;
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 600; font-size: 13px; white-space: pre;
+}
+
+/* ---------- tools panel ---------- */
+.pit-tool-stat { position: absolute; top: 59px; font-family: var(--font-tech); font-weight: 700; font-size: 20px; }
+.pit-tool-locate-btn {
+  position: absolute; left: 393px; top: 57px;
+  width: 150px; height: 30px;
+  border: 1px solid var(--pit-accent);
+  background: rgba(255, 199, 0, 0.12);
+  color: var(--pit-accent);
+  font-size: 12px; font-weight: 500;
+}
+.pit-tool-locate-btn:hover { background: rgba(255, 199, 0, 0.22); }
+.pit-tool-row {
+  position: absolute; left: 15px;
+  width: 528px; height: 52px;
+  background: var(--pit-panel-2);
+  text-align: left;
+}
+.pit-tool-slot {
+  position: absolute; left: 12px; top: 12px;
+  width: 52px; height: 28px;
+  display: grid; place-items: center;
+  border: 1px solid var(--pit-line);
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 600; font-size: 11px;
+  letter-spacing: 0;
+}
+.pit-tool-name { position: absolute; left: 80px; top: 16px; font-size: 15px; font-weight: 500; }
+.pit-pill {
+  position: absolute; top: 13px; right: 60px;
+  height: 26px; padding: 0 10px;
+  display: grid; place-items: center;
+  font-size: 12px; font-weight: 500; white-space: nowrap;
+}
+.pit-pill.in { background: rgba(77, 217, 115, 0.15); color: var(--pit-ok); }
+.pit-pill.out { background: rgba(255, 199, 0, 0.15); color: var(--pit-accent); }
+.pit-pill.lost { background: rgba(242, 77, 64, 0.15); color: var(--pit-err); }
+.pit-led {
+  position: absolute; right: 18px; top: 21px;
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--pit-text-2); border-radius: 50%;
+  background: transparent;
+}
+.pit-tool-row:hover .pit-led { border-color: var(--pit-accent); background: var(--pit-accent); }
+
+/* ---------- parts panel ---------- */
+.pit-parts-hint { position: absolute; left: 23px; top: 57px; color: var(--pit-text-2); font-size: 12px; }
+.pit-unit-row {
+  position: absolute; left: 15px;
+  width: 508px; height: 26px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+  text-align: left;
+}
+.pit-unit-row.low { border-color: rgba(255, 140, 26, 0.7); }
+.pit-unit-row.active {
+  background: rgba(255, 199, 0, 0.9);
+  border: 2px solid rgba(255, 199, 0, 0.7);
+}
+.pit-unit-row .u {
+  position: absolute; left: 10px; top: 4px;
+  color: var(--pit-accent);
+  font-family: var(--font-tech); font-weight: 700; font-size: 13px;
+}
+.pit-unit-row .nm { position: absolute; left: 47px; top: 4px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.pit-unit-row .note { position: absolute; left: 47px; top: 7px; transform: translateX(88px); color: var(--pit-text-2); font-size: 10px; white-space: nowrap; }
+.pit-unit-row .st {
+  position: absolute; right: 10px; top: 6px;
+  display: flex; align-items: center; gap: 6px;
+  font-family: var(--font-tech); font-weight: 600; font-size: 11px; white-space: nowrap;
+}
+.pit-unit-row .st i { width: 8px; height: 8px; border-radius: 50%; }
+.pit-unit-row.active .u { left: 8px; }
+.pit-unit-row.active .nm { left: 46px; }
+.pit-unit-row.active .u,
+.pit-unit-row.active .nm { color: var(--pit-dark); }
+.pit-unit-row.active .note { color: rgba(13, 13, 15, 0.7); }
+.pit-unit-row.active .st { color: var(--pit-dark); right: 8px; top: 5px; }
+.pit-unit-row.active .st i { background: var(--pit-dark); }
+.pit-parts-warn {
+  position: absolute; left: 23px; top: 329px;
+  color: var(--pit-warn); font-size: 14px; font-weight: 500;
+}
+.pit-low-row {
+  position: absolute; left: 15px;
+  width: 508px; height: 44px;
+  background: rgba(255, 140, 26, 0.06);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 0 12px;
+}
+.pit-low-row .nm { font-size: 14px; font-weight: 500; }
+.pit-low-row .sub { color: var(--pit-text-2); font-size: 11px; white-space: pre; }
+.pit-buy-btn {
+  width: 76px; height: 26px;
+  border: 1px solid var(--pit-accent);
+  background: transparent;
+  color: var(--pit-accent); font-size: 12px; font-weight: 500;
+}
+.pit-buy-btn:hover { background: rgba(255, 199, 0, 0.12); }
+.pit-tray-title { position: absolute; left: 23px; top: 543px; font-size: 14px; font-weight: 500; }
+.pit-tray {
+  position: absolute; top: 571px;
+  width: 158px; height: 50px;
+  padding: 6px 9px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+}
+.pit-tray strong { display: block; color: var(--pit-accent); font-size: 13px; font-weight: 700; }
+.pit-tray span { display: block; margin-top: 5px; color: var(--pit-text-2); font-size: 10px; }
+
+/* ---------- cad panel ---------- */
+.pit-cad-viewport {
+  position: absolute; left: 15px; top: 59px;
+  width: 320px; height: 224px;
+  overflow: hidden;
+  border: 1px solid var(--pit-line);
+  background: #0a0b0d;
+}
+.pit-cad-viewport .file {
+  position: absolute; left: 7px; bottom: 12px;
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 500; font-size: 11px;
+}
+.pit-cad-cross-h { position: absolute; left: 149px; top: 111px; width: 20px; height: 1px; background: rgba(255, 199, 0, 0.5); }
+.pit-cad-cross-v { position: absolute; left: 159px; top: 101px; width: 1px; height: 20px; background: rgba(255, 199, 0, 0.5); }
+.pit-cad-tree-label { position: absolute; left: 351px; top: 59px; color: var(--pit-text-2); font-size: 12px; font-weight: 500; }
+.pit-cad-tree-item {
+  position: absolute; left: 351px;
+  width: 156px; height: 34px;
+  display: flex; align-items: center;
+  padding-left: 10px;
+  border: 0;
+  background: var(--pit-panel-2);
+  color: var(--pit-text-2); font-size: 12px; font-weight: 500;
+  text-align: left;
+}
+.pit-cad-tree-item.active {
+  background: rgba(255, 199, 0, 0.15);
+  border: 1px solid var(--pit-accent);
+  color: var(--pit-accent);
+}
+.pit-cad-slider { position: absolute; left: 351px; top: 289px; width: 156px; height: 3px; background: var(--pit-line); }
+.pit-cad-slider i {
+  position: absolute; left: 70px; top: -5px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--pit-accent);
+}
+
+/* ---------- schedule panel ---------- */
+.pit-sch-row {
+  position: absolute; left: 15px;
+  width: 492px; height: 40px;
+  display: grid;
+  grid-template-columns: 96px 190px 1fr auto;
+  align-items: center;
+  padding: 0 14px;
+  background: var(--pit-panel-2);
+}
+.pit-sch-row.current {
+  background: rgba(255, 199, 0, 0.12);
+  border: 1px solid var(--pit-accent);
+}
+.pit-sch-row .m { font-family: var(--font-tech); font-weight: 700; font-size: 15px; }
+.pit-sch-row .t { color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; font-size: 13px; }
+.pit-sch-row .p { font-family: var(--font-tech); font-weight: 600; font-size: 13px; }
+.pit-sch-row .tag { color: var(--pit-accent); font-size: 11px; font-weight: 500; }
+
+/* ---------- live ticker ---------- */
+.pit-ticker {
+  position: absolute; left: 224px; top: 1044px;
+  width: 1656px; height: 28px;
+  display: flex; align-items: center;
+  background: var(--pit-panel-2);
+  overflow: hidden;
+  font-size: 12px; white-space: pre;
+}
+.pit-ticker .live { margin-left: 12px; color: var(--pit-err); font-family: var(--font-tech); font-weight: 600; }
+.pit-ticker .ai { margin-left: 108px; color: var(--pit-text-2); }
+.pit-ticker .live i { animation: pit-blink 1.2s ease-in-out infinite; font-style: normal; }
+
+@keyframes pit-blink { 50% { opacity: 0.25; } }
+
+/* ---------- locate overlay (screen 2) ---------- */
+.pit-locate { position: absolute; inset: 0; z-index: 20; background: var(--pit-bg); }
+.pit-locate-banner {
+  position: absolute; inset: 0 0 auto 0;
+  height: 120px;
+  background: var(--pit-accent);
+  color: var(--pit-dark);
+}
+.pit-locate-banner h2 {
+  position: absolute; left: 60px; top: 18px; margin: 0;
+  font-size: 40px; font-weight: 700;
+}
+.pit-locate-banner p {
+  position: absolute; left: 62px; top: 76px; margin: 0;
+  font-family: var(--font-tech); font-weight: 600; font-size: 17px; letter-spacing: 2px;
+  color: rgba(13, 13, 15, 0.65);
+}
+.pit-locate-banner p i { animation: pit-blink 0.9s steps(2) infinite; font-style: normal; }
+.pit-locate-cancel {
+  position: absolute; right: 60px; top: 32px;
+  width: 160px; height: 56px;
+  border: 2px solid var(--pit-dark);
+  background: transparent;
+  color: var(--pit-dark); font-size: 20px; font-weight: 700;
+}
+.pit-locate-cancel:hover { background: rgba(13, 13, 15, 0.08); }
+.pit-rack-label {
+  position: absolute; left: 80px; top: 136px;
+  color: var(--pit-text-2);
+  font-family: var(--font-tech); font-weight: 600; font-size: 13px; letter-spacing: 2px;
+}
+.pit-rack-rail { position: absolute; top: 156px; width: 8px; height: 840px; background: var(--pit-line); }
+.pit-rack-unit {
+  position: absolute; left: 80px;
+  width: 940px; height: 96px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel);
+  text-align: left;
+}
+.pit-rack-unit .u {
+  position: absolute; left: 24px; top: 26px;
+  color: var(--pit-accent);
+  font-family: var(--font-display); font-weight: 700; font-size: 36px;
+}
+.pit-rack-unit .nm { position: absolute; left: 110px; top: 22px; font-size: 19px; font-weight: 500; }
+.pit-rack-unit .note { position: absolute; left: 110px; top: 54px; color: var(--pit-text-2); font-size: 13px; }
+.pit-rack-unit .handle { position: absolute; right: 40px; top: 44px; width: 120px; height: 8px; border-radius: 4px; background: var(--pit-line); }
+.pit-rack-unit.target {
+  background: rgba(255, 199, 0, 0.92);
+  border: 3px solid var(--pit-accent);
+}
+.pit-rack-unit.target .u { left: 22px; top: 24px; color: var(--pit-dark); }
+.pit-rack-unit.target .nm { left: 108px; top: 20px; color: var(--pit-dark); font-weight: 700; }
+.pit-rack-unit.target .note { left: 108px; top: 52px; color: rgba(13, 13, 15, 0.7); }
+.pit-rack-unit.target .handle { background: rgba(13, 13, 15, 0.85); }
+.pit-rack-unit .here { position: absolute; right: 200px; top: 33px; color: var(--pit-dark); font-size: 22px; font-weight: 700; }
+.pit-rack-unit .here i { animation: pit-blink 0.9s steps(2) infinite; font-style: normal; }
+
+.pit-locate-detail {
+  position: absolute; left: 1100px; top: 160px;
+  width: 740px; height: 380px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel);
+}
+.pit-locate-detail h3 { position: absolute; left: 20px; top: 16px; margin: 0; font-size: 17px; font-weight: 700; }
+.pit-slot {
+  position: absolute;
+  width: 220px; height: 134px;
+  padding: 8px 10px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+}
+.pit-slot.empty { border-style: dashed; }
+.pit-slot .code { color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 600; font-size: 13px; }
+.pit-slot .nm { display: block; margin-top: 22px; font-size: 16px; font-weight: 500; }
+.pit-slot .st { display: block; margin-top: 12px; color: var(--pit-ok); font-size: 12px; }
+.pit-slot .em { display: block; margin-top: 30px; color: rgba(135, 143, 156, 0.5); font-size: 13px; }
+.pit-slot.target { background: rgba(255, 199, 0, 0.92); border: 3px solid var(--pit-accent); }
+.pit-slot.target .code { color: rgba(13, 13, 15, 0.75); }
+.pit-slot.target .nm { color: var(--pit-dark); font-weight: 700; }
+.pit-slot.target .st { color: var(--pit-dark); font-size: 18px; font-weight: 700; }
+.pit-slot.target .st i { animation: pit-blink 0.9s steps(2) infinite; font-style: normal; }
+
+.pit-rfid-log {
+  position: absolute; left: 1100px; top: 580px;
+  width: 740px; height: 360px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel);
+}
+.pit-rfid-log h3 { position: absolute; left: 20px; top: 16px; margin: 0; font-size: 17px; font-weight: 700; }
+.pit-rfid-row {
+  position: absolute; left: 20px;
+  display: grid; grid-template-columns: 70px 1fr;
+  font-size: 14px;
+}
+.pit-rfid-row time { color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; }
+.pit-rfid-tip { position: absolute; left: 20px; bottom: 26px; color: var(--pit-text-2); font-size: 13px; }
+
+/* ================= sub-pages shared ================= */
+
+/* header title on detail pages sits at top:22 */
+.pit-header.center-title .pit-title { top: 22px; }
+.pit-header.center-title .pit-subtitle { display: none; }
+
+/* generic filter list rows (tools page left rail) */
+.pit-filter-row {
+  position: absolute; left: 15px;
+  width: 268px; height: 44px;
+  background: var(--pit-panel-2);
+  border: 0;
+  text-align: left;
+}
+.pit-filter-row.active {
+  background: rgba(255, 199, 0, 0.15);
+  border: 1px solid var(--pit-accent);
+}
+.pit-filter-row .nm { position: absolute; left: 12px; top: 12px; font-size: 14px; font-weight: 500; }
+.pit-filter-row.active .nm { color: var(--pit-accent); }
+.pit-filter-row .cnt { position: absolute; right: 12px; top: 15px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 600; font-size: 12px; }
+
+/* toolbar buttons in table panels */
+.pit-table-search {
+  position: absolute; left: 15px; top: 57px;
+  width: 400px; height: 40px;
+  display: flex; align-items: center;
+  padding-left: 14px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+  color: var(--pit-text-2); font-size: 13px;
+}
+.pit-tbtn {
+  position: absolute; top: 57px;
+  height: 40px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+  color: var(--pit-text); font-size: 13px; font-weight: 500;
+}
+.pit-tbtn.primary { background: var(--pit-accent); border-color: var(--pit-accent); color: var(--pit-dark); }
+.pit-tbtn:hover:not(.primary) { background: rgba(255, 255, 255, 0.04); }
+
+/* generic table */
+.pit-th { position: absolute; top: 124px; color: var(--pit-text-2); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.pit-th-bg { position: absolute; left: 15px; top: 115px; right: 15px; height: 34px; background: var(--pit-panel-2); }
+.pit-td-row {
+  position: absolute; left: 15px; right: 15px;
+  height: 46px;
+  background: rgba(25, 27, 30, 0.45);
+  border: 0;
+  text-align: left;
+  width: auto;
+}
+.pit-td-row:hover { background: rgba(255, 255, 255, 0.03); }
+.pit-td { position: absolute; top: 14px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.pit-td.tech { font-family: var(--font-tech); font-weight: 600; font-size: 13px; top: 15px; }
+.pit-td.dim { color: var(--pit-text-2); font-weight: 400; font-size: 13px; }
+.pit-locate-mini {
+  position: absolute; top: 9px;
+  width: 88px; height: 28px;
+  border: 1px solid var(--pit-accent);
+  background: transparent;
+  color: var(--pit-accent); font-size: 12px; font-weight: 500;
+}
+.pit-locate-mini:hover { background: rgba(255, 199, 0, 0.12); }
+
+/* stat summary cards (CAN page top row) */
+.pit-stat-card {
+  position: absolute; top: 96px;
+  width: 400px; height: 110px;
+  background: var(--pit-panel);
+  border: 1px solid var(--pit-line);
+}
+.pit-stat-card::before {
+  content: "";
+  position: absolute; left: 15px; top: 15px;
+  width: 6px; height: 18px;
+  background: var(--pit-accent);
+}
+.pit-stat-card .lb { position: absolute; left: 29px; top: 15px; color: var(--pit-text-2); font-size: 14px; font-weight: 500; }
+.pit-stat-card .vl { position: absolute; left: 27px; top: 43px; font-family: var(--font-display); font-weight: 700; font-size: 44px; line-height: 1; }
+
+/* big daily stats (tools page bottom right) */
+.pit-big-stat .vl { position: absolute; top: 79px; font-family: var(--font-display); font-weight: 700; font-size: 56px; line-height: 1; }
+.pit-big-stat .lb { position: absolute; top: 149px; color: var(--pit-text-2); font-size: 14px; }
+
+/* progress bars */
+.pit-bar { position: absolute; background: var(--pit-panel-2); }
+.pit-bar > i { position: absolute; left: 0; top: 0; bottom: 0; display: block; }
+
+/* RFID station */
+.pit-station-title { position: absolute; left: 31px; top: 75px; margin: 0; font-size: 26px; font-weight: 700; }
+.pit-station-sub { position: absolute; left: 31px; top: 119px; color: var(--pit-text-2); font-size: 14px; }
+.pit-rfid-ring { position: absolute; border: 3px dashed var(--pit-accent); border-radius: 50%; }
+.pit-rfid-ring2 { position: absolute; border: 2px solid rgba(255, 199, 0, 0.5); border-radius: 50%; }
+.pit-rfid-label { position: absolute; color: var(--pit-accent); font-family: var(--font-tech); font-weight: 700; font-size: 20px; }
+.pit-scan-ok {
+  position: absolute; left: 31px; top: 179px;
+  width: 756px; height: 56px;
+  display: flex; align-items: center;
+  padding-left: 18px;
+  border: 1px solid var(--pit-ok);
+  background: rgba(77, 217, 115, 0.1);
+  color: var(--pit-ok); font-size: 15px; font-weight: 500;
+}
+
+/* CAN device table rows */
+.pit-dev-row {
+  position: absolute; left: 15px;
+  width: 1048px; height: 52px;
+  background: rgba(25, 27, 30, 0.45);
+}
+.pit-dev-row.off { background: rgba(242, 77, 64, 0.1); border: 1px solid rgba(242, 77, 64, 0.5); }
+.pit-can-alert {
+  position: absolute; left: 15px;
+  width: 1048px; height: 44px;
+  display: flex; align-items: center;
+  padding-left: 16px;
+  border: 1px solid var(--pit-err);
+  background: rgba(242, 77, 64, 0.12);
+  color: var(--pit-err); font-size: 14px; font-weight: 500;
+}
+
+/* topology */
+.pit-topo-bus { position: absolute; left: 44px; top: 299px; width: 470px; height: 3px; background: var(--pit-accent); }
+.pit-topo-term { position: absolute; top: 285px; width: 3px; height: 30px; background: var(--pit-accent); }
+.pit-topo-tl { position: absolute; top: 323px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; font-size: 10px; }
+.pit-topo-stub { position: absolute; top: 259px; width: 2px; height: 40px; }
+.pit-topo-node {
+  position: absolute; top: 229px;
+  width: 46px; height: 30px;
+  display: grid; place-items: center;
+  border: 1.5px solid;
+  font-family: var(--font-tech); font-weight: 700; font-size: 13px;
+}
+.pit-topo-x { position: absolute; top: 307px; color: var(--pit-err); font-family: var(--font-tech); font-weight: 700; font-size: 14px; }
+.pit-topo-rio {
+  position: absolute; left: 219px; top: 349px;
+  width: 120px; height: 44px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--pit-accent);
+  background: rgba(255, 199, 0, 0.15);
+  color: var(--pit-accent);
+  font-family: var(--font-tech); font-weight: 700; font-size: 14px;
+}
+.pit-topo-rio-link { position: absolute; left: 279px; top: 299px; width: 2px; height: 50px; background: var(--pit-ok); }
+.pit-topo-chart-lb { position: absolute; left: 29px; top: 389px; color: var(--pit-text-2); font-size: 13px; font-weight: 500; }
+.pit-topo-bar { position: absolute; width: 16px; }
+
+/* serial log */
+.pit-log-row { position: absolute; left: 23px; display: grid; grid-template-columns: 156px 70px 1fr; font-family: var(--font-tech); font-size: 13px; }
+.pit-log-row time { color: rgba(135, 143, 156, 0.7); font-weight: 500; }
+.pit-log-row .lv { font-weight: 700; }
+.pit-log-row .msg { color: var(--pit-text); font-weight: 500; }
+
+/* live score */
+.pit-score-tag { position: absolute; top: 71px; font-family: var(--font-tech); font-weight: 700; font-size: 18px; }
+.pit-score { position: absolute; top: 95px; font-family: var(--font-display); font-weight: 700; font-size: 88px; line-height: 1; }
+.pit-phase { position: absolute; top: 89px; font-family: var(--font-tech); font-weight: 600; font-size: 12px; }
+.pit-phase-bar { position: absolute; top: 111px; width: 70px; height: 5px; }
+.pit-live-time { position: absolute; left: 559px; top: 139px; color: var(--pit-accent); font-family: var(--font-tech); font-weight: 700; font-size: 20px; }
+.pit-live-note { position: absolute; left: 31px; top: 227px; color: var(--pit-text-2); font-size: 12px; }
+
+/* next match alliance boxes */
+.pit-ally-box {
+  position: absolute; top: 65px;
+  width: 200px; height: 110px;
+  padding: 11px 13px;
+}
+.pit-ally-box strong { display: block; font-size: 14px; font-weight: 700; }
+.pit-ally-box .teams { display: block; margin-top: 19px; font-family: var(--font-tech); font-weight: 600; font-size: 14px; }
+.pit-ally-box .pos { display: block; margin-top: 16px; color: var(--pit-text-2); font-size: 11px; }
+.pit-next-cd { position: absolute; left: 35px; top: 69px; color: var(--pit-accent); font-family: var(--font-tech); font-weight: 700; font-size: 72px; line-height: 1; font-variant-numeric: tabular-nums; }
+.pit-next-cd-lb { position: absolute; left: 39px; top: 157px; color: var(--pit-text-2); font-size: 13px; }
+.pit-next-check { position: absolute; left: 35px; top: 199px; color: var(--pit-warn); font-size: 13px; font-weight: 500; }
+
+/* schedule rows */
+.pit-sch2-row {
+  position: absolute; left: 15px;
+  width: 788px; height: 60px;
+  background: rgba(25, 27, 30, 0.45);
+}
+.pit-sch2-row.current { background: rgba(255, 199, 0, 0.12); border: 1px solid var(--pit-accent); }
+
+/* AI insight cards */
+.pit-perm {
+  position: absolute; right: 17px; top: 13px;
+  width: 150px; height: 26px;
+  display: grid; place-items: center;
+  border: 1px solid var(--pit-ok);
+  background: rgba(77, 217, 115, 0.12);
+  color: var(--pit-ok); font-size: 11px; font-weight: 500;
+}
+.pit-ai-card {
+  position: absolute; left: 15px;
+  width: 788px; min-height: 120px;
+  background: var(--pit-panel-2);
+  border: 1px solid var(--pit-line);
+  padding: 13px 20px;
+}
+.pit-ai-card::before {
+  content: "";
+  position: absolute; left: -1px; top: -1px; bottom: -1px;
+  width: 4px;
+  background: var(--ai-col, var(--pit-accent));
+}
+.pit-ai-card h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--ai-col, var(--pit-accent)); }
+.pit-ai-card p { margin: 13px 0 0; font-size: 13px; line-height: 1.6; }
+.pit-ai-src { position: absolute; left: 23px; bottom: 20px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; font-size: 11px; }
+.pit-scout-box {
+  position: absolute; left: 15px;
+  width: 788px; height: 60px;
+  display: flex; align-items: center;
+  padding-left: 17px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+  color: var(--pit-text-2); font-size: 13px;
+}
+
+/* power channels (detail page) */
+.pit-ch-row {
+  position: absolute; left: 15px;
+  width: 1048px; height: 62px;
+  background: var(--pit-panel-2);
+}
+.pit-ch-row.off { background: rgba(25, 27, 30, 0.5); }
+.pit-ch-id { position: absolute; left: 18px; top: 21px; font-family: var(--font-tech); font-weight: 700; font-size: 15px; }
+.pit-ch-name { position: absolute; left: 80px; top: 12px; font-size: 15px; font-weight: 500; }
+.pit-ch-spec { position: absolute; left: 80px; top: 36px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; font-size: 12px; }
+.pit-ch-zone { position: absolute; left: 560px; top: 23px; color: var(--pit-text-2); font-size: 12px; }
+.pit-ch-status { position: absolute; left: 820px; top: 22px; font-family: var(--font-tech); font-weight: 700; font-size: 13px; }
+.pit-toggle.lg { right: 104px; top: 17px; width: 56px; height: 28px; border-radius: 14px; }
+.pit-toggle.lg i { width: 22px; height: 22px; }
+.pit-toggle.lg.on i { left: 31px; }
+
+/* battery rows */
+.pit-bat-row {
+  position: absolute; left: 15px;
+  width: 528px; height: 52px;
+  background: var(--pit-panel-2);
+}
+.pit-bat-name { position: absolute; left: 14px; top: 17px; font-family: var(--font-tech); font-weight: 600; font-size: 14px; }
+.pit-bat-track { position: absolute; left: 90px; top: 18px; width: 280px; height: 16px; background: var(--pit-panel); }
+.pit-bat-track i { position: absolute; left: 0; top: 0; bottom: 0; display: block; }
+.pit-bat-pct { position: absolute; left: 390px; top: 17px; font-family: var(--font-tech); font-weight: 700; font-size: 14px; }
+.pit-bat-chg { position: absolute; left: 452px; top: 18px; color: var(--pit-accent); font-size: 12px; font-weight: 500; }
+
+/* safety rules */
+.pit-rule-row {
+  position: absolute; left: 15px;
+  width: 1624px; height: 44px;
+  background: rgba(25, 27, 30, 0.45);
+}
+.pit-rule-row .t { position: absolute; left: 16px; top: 12px; font-size: 14px; font-weight: 700; }
+.pit-rule-row .d { position: absolute; left: 220px; top: 13px; color: var(--pit-text-2); font-size: 13px; }
+.pit-rule-row .s { position: absolute; right: 20px; top: 13px; font-size: 13px; font-weight: 500; }
+
+/* team hero */
+.pit-hero-num { position: absolute; left: 47px; top: 39px; margin: 0; color: var(--pit-accent); font-family: var(--font-display); font-weight: 700; font-size: 220px; line-height: 1; }
+.pit-hero-name { position: absolute; left: 55px; top: 309px; margin: 0; font-size: 40px; font-weight: 700; }
+.pit-hero-en { position: absolute; left: 57px; top: 367px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 600; font-size: 16px; letter-spacing: 4px; }
+.pit-hero-stripe { position: absolute; width: 120px; height: 6px; transform: rotate(-30deg); }
+.pit-hero-robot-lb { position: absolute; left: 55px; top: 799px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 500; font-size: 13px; }
+.pit-hero-record { position: absolute; left: 55px; top: 849px; font-size: 15px; font-weight: 500; }
+
+/* capability + interview rows */
+.pit-cap-row {
+  position: absolute; left: 15px;
+  width: 788px; height: 66px;
+  background: var(--pit-panel-2);
+}
+.pit-cap-row::before {
+  content: "";
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; background: var(--cap-col, var(--pit-accent));
+}
+.pit-cap-row .t { position: absolute; left: 20px; top: 12px; font-size: 15px; font-weight: 700; }
+.pit-cap-row .d { position: absolute; left: 20px; top: 38px; color: var(--pit-text-2); font-size: 13px; }
+.pit-itv-row {
+  position: absolute; left: 15px;
+  width: 788px; height: 62px;
+  background: var(--pit-panel-2);
+  border: 0;
+  text-align: left;
+}
+.pit-itv-row.todo { background: rgba(25, 27, 30, 0.5); }
+.pit-itv-num { position: absolute; left: 16px; top: 19px; font-family: var(--font-tech); font-weight: 700; font-size: 18px; }
+.pit-itv-row .t { position: absolute; left: 70px; top: 10px; font-size: 15px; font-weight: 700; }
+.pit-itv-row .d { position: absolute; left: 70px; top: 36px; color: var(--pit-text-2); font-size: 12px; }
+.pit-itv-dur { position: absolute; right: 83px; top: 22px; color: var(--pit-text-2); font-family: var(--font-tech); font-weight: 600; font-size: 13px; }
+.pit-itv-check {
+  position: absolute; right: 12px; top: 21px;
+  width: 20px; height: 20px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--pit-line);
+}
+.pit-itv-check.done { background: var(--pit-ok); border-color: var(--pit-ok); color: var(--pit-dark); font-size: 12px; font-weight: 700; }
+
+/* tray rows (parts page bottom right) */
+.pit-tray2-row {
+  position: absolute; left: 15px;
+  width: 788px; height: 72px;
+  background: var(--pit-panel-2);
+  border: 1px solid var(--pit-line);
+}
+.pit-tray2-row::before {
+  content: "";
+  position: absolute; left: -1px; top: -1px; bottom: -1px;
+  width: 4px; background: var(--tray-col, var(--pit-accent));
+}
+.pit-tray2-row .t { position: absolute; left: 19px; top: 13px; font-size: 16px; font-weight: 700; color: var(--tray-col, var(--pit-accent)); }
+.pit-tray2-row .d { position: absolute; left: 19px; top: 41px; font-size: 14px; }
+.pit-tray2-row .n { position: absolute; right: 16px; top: 27px; color: var(--pit-text-2); font-size: 12px; }
+
+/* storage unit cards (parts page left) */
+.pit-su-card {
+  position: absolute; left: 15px;
+  width: 528px; height: 92px;
+  background: var(--pit-panel-2);
+  border: 0;
+  text-align: left;
+}
+.pit-su-card.low { border: 1px solid rgba(255, 140, 26, 0.6); }
+.pit-su-card .u { position: absolute; left: 16px; top: 24px; color: var(--pit-accent); font-family: var(--font-display); font-weight: 700; font-size: 30px; }
+.pit-su-card .nm { position: absolute; left: 86px; top: 18px; font-size: 16px; font-weight: 500; }
+.pit-su-card .note { position: absolute; left: 86px; top: 44px; color: var(--pit-text-2); font-size: 12px; }
+.pit-su-card .st { position: absolute; left: 86px; top: 64px; font-size: 12px; font-weight: 500; }
+.pit-su-card .track { position: absolute; right: 20px; top: 43px; width: 90px; height: 6px; background: var(--pit-panel); }
+.pit-su-card .track i { position: absolute; left: 0; top: 0; bottom: 0; display: block; }
+
+/* U4 compartment grid */
+.pit-comp {
+  position: absolute;
+  width: 122px; height: 92px;
+  padding: 9px 10px;
+  border: 1px solid rgba(77, 217, 115, 0.5);
+  background: var(--pit-panel-2);
+  text-align: left;
+}
+.pit-comp .t { font-family: var(--font-tech); font-weight: 600; font-size: 14px; }
+.pit-comp .dot { position: absolute; left: 9px; top: 63px; width: 7px; height: 7px; border-radius: 50%; background: var(--pit-ok); }
+.pit-comp.low { border-color: var(--pit-warn); }
+.pit-comp.empty { border-color: var(--pit-err); border-style: dashed; }
+.pit-comp .st { position: absolute; left: 9px; top: 57px; font-size: 12px; font-weight: 500; }
+.pit-comp.active {
+  background: rgba(255, 199, 0, 0.9);
+  border: 2px solid var(--pit-accent);
+}
+.pit-comp.active .t { color: var(--pit-dark); }
+.pit-comp.active .st { color: var(--pit-dark); font-weight: 700; top: 54px; font-size: 13px; }
+.pit-comp-note { position: absolute; left: 23px; top: 283px; color: var(--pit-text-2); font-size: 12px; }
+
+/* procurement export button */
+.pit-export-btn {
+  position: absolute; left: 15px; top: 393px;
+  width: 200px; height: 40px;
+  display: grid; place-items: center;
+  border: 0;
+  background: var(--pit-accent);
+  color: var(--pit-dark); font-size: 14px; font-weight: 700;
+}
+.pit-export-btn:hover { background: #ffd133; }
+.pit-bought-btn {
+  position: absolute; top: 11px;
+  width: 70px; height: 28px;
+  border: 1px solid var(--pit-ok);
+  background: transparent;
+  color: var(--pit-ok); font-size: 12px; font-weight: 500;
+}
+.pit-bought-btn:hover { background: rgba(77, 217, 115, 0.1); }
