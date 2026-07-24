@@ -7,7 +7,7 @@ export type { PitState, PitTool, ToolState } from "@/types/pit";
 
 /**
  * 统一数据源：优先 SSE 实时推送，失败时 3s 轮询回退。
- * 所有 PIT 页面共享同一份真实状态（来自树莓派 MQTT 聚合）。
+ * 所有 PIT 页面读取同一份服务端状态（来自 MQTT 和米家实时轮询）。
  */
 export function usePitState(): { state: PitState | null; live: boolean } {
   const [state, setState] = useState<PitState | null>(null);

@@ -29,6 +29,27 @@ test("supports cloud-only outlets and measurement scaling", () => {
   assert.deepEqual(outlet.amps, { siid: 5, piid: 2, scale: 0.001 });
 });
 
+test("migrates an imported cuco plug that predates the power mapping", () => {
+  const [outlet] = parseMiotOutletConfigs(JSON.stringify([{
+    id: "CH2",
+    model: "cuco.plug.v3",
+    did: "2004729696",
+  }]));
+
+  assert.deepEqual(outlet.watts, { siid: 11, piid: 2, scale: 1 });
+});
+
+test("keeps an explicitly disabled cuco power mapping disabled", () => {
+  const [outlet] = parseMiotOutletConfigs(JSON.stringify([{
+    id: "CH2",
+    model: "cuco.plug.v3",
+    did: "2004729696",
+    watts: null,
+  }]));
+
+  assert.equal(outlet.watts, undefined);
+});
+
 test("rejects incomplete local credentials and duplicate channels", () => {
   assert.throws(
     () => parseMiotOutletConfigs('[{"id":"CH1","ip":"192.168.1.31"}]'),

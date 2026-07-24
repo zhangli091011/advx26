@@ -30,9 +30,9 @@ export interface PowerChannel {
   id: string;
   name: string;
   zone: string;
-  volts: number;
-  amps: number;
-  watts: number;
+  volts: number | null;
+  amps: number | null;
+  watts: number | null;
   on: boolean;
   provider: "mqtt" | "miot";
   transport: "local" | "cloud" | null;

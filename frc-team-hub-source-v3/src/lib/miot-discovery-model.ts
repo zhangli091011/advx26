@@ -24,7 +24,7 @@ export function sanitizeDiscoveredDevices(devices: MiCloudDevice[]): DiscoveredM
         ip: text(device.localip),
         online: device.isOnline === true,
         localAvailable: Boolean(device.localip && validToken(device.token)),
-        mappingKnown: model === "xiaomi.plug.mcn005" || model === "chuangmi.plug.212a01",
+        mappingKnown: ["cuco.plug.v3", "xiaomi.plug.mcn005", "chuangmi.plug.212a01"].includes(model),
       }];
     });
 }

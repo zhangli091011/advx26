@@ -17,7 +17,9 @@ export function PitPowerClient() {
   const channels = state?.channels ?? [];
   const batteries = state?.batteries ?? [];
 
-  const total = channels.reduce((sum, channel) => sum + (channel.on ? channel.watts : 0), 0);
+  const measuredChannels = channels.filter((channel) => channel.online && channel.watts !== null);
+  const missingMeasurements = channels.some((channel) => channel.online && channel.on && channel.watts === null);
+  const total = measuredChannels.reduce((sum, channel) => sum + (channel.on ? channel.watts ?? 0 : 0), 0);
 
   async function togglePower(id: string, on: boolean) {
     setControlError(null);
@@ -36,7 +38,7 @@ export function PitPowerClient() {
           <div key={c.id} className={`pit-ch-row ${c.on ? "" : "off"}`} style={{ top: 63 + i * 70 }}>
             <span className="pit-ch-id" style={{ color: c.on ? "var(--pit-accent)" : "var(--pit-text-2)" }}>{c.id}</span>
             <span className="pit-ch-name" style={{ color: c.on ? "var(--pit-text)" : "var(--pit-text-2)" }}>{c.name}</span>
-            <span className="pit-ch-spec">{`${c.volts}V · ${c.amps.toFixed(1)}A · ${c.watts}W`}</span>
+            <span className="pit-ch-spec">{`${measurement(c.volts, "V")} · ${measurement(c.amps, "A", 2)} · ${measurement(c.watts, "W")}`}</span>
             <span className="pit-ch-zone">{c.zone}</span>
             <span className="pit-ch-status" style={{ color: !c.online ? "var(--pit-err)" : c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>
               {!c.online ? "OFFLINE" : c.on ? "ON" : "OFF"}
@@ -52,14 +54,14 @@ export function PitPowerClient() {
             </button>
             {c.provider === "miot" ? (
               <span style={{ position: "absolute", right: 18, top: 47, color: "var(--pit-blue)", fontSize: 9, letterSpacing: 1 }}>
-                MIOT {c.transport?.toUpperCase() ?? "OFFLINE"}
+                MIOT {c.transport?.toUpperCase() ?? "OFFLINE"} · {c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : "无实时数据"}
               </span>
             ) : null}
           </div>
         ))}
         {channels.length === 0 ? (
           <div style={{ position: "absolute", left: 24, top: 200, color: "var(--pit-text-2)", fontSize: 13 }}>
-            等待电源数据…（MQTT 或 MIOT_OUTLETS_JSON）
+            等待米家智能插座数据…（设置页一键获取并导入）
           </div>
         ) : null}
         {controlError ? (
@@ -72,10 +74,10 @@ export function PitPowerClient() {
       {/* 总负载 */}
       <Panel x={1320} y={96} w={560} h={300} title="总负载" en="TOTAL LOAD">
         <span style={{ position: "absolute", left: 29, top: 63, color: "var(--pit-accent)", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 64, lineHeight: 1 }}>
-          {channels.length ? `${total}W` : "—"}
+          {measuredChannels.length ? `${missingMeasurements ? "≥" : ""}${formatWatts(total)}W` : "—"}
         </span>
         <span style={{ position: "absolute", left: 31, top: 149, color: "var(--pit-text-2)", fontSize: 13 }}>
-          {channels.length ? "负载限额与峰值统计未配置" : "电源数据未配置"}
+          {missingMeasurements ? "部分开启通道暂无实时功率，当前为已测量合计" : channels.length ? "所有可用通道的实时功率合计" : "电源数据未配置"}
         </span>
         <div className="pit-bar" style={{ left: 31, top: 189, width: 496, height: 10 }}>
           <i style={{ width: "0%", background: "var(--pit-accent)" }} />
@@ -118,4 +120,12 @@ export function PitPowerClient() {
       </Panel>
     </PitShell>
   );
+}
+
+function measurement(value: number | null, unit: string, digits = 0) {
+  return value === null ? `—${unit}` : `${value.toFixed(digits)}${unit}`;
+}
+
+function formatWatts(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }

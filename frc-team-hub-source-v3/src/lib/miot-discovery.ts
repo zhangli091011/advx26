@@ -70,6 +70,9 @@ async function getCloudDevices(config: StoredPitConfig) {
 }
 
 function profileForModel(model: string): Partial<MiotOutletConfig> | null {
+  if (model === "cuco.plug.v3") {
+    return { watts: { siid: 11, piid: 2, scale: 1 } };
+  }
   if (model === "xiaomi.plug.mcn005") {
     return { watts: { siid: 3, piid: 2, scale: 1 } };
   }

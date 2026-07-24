@@ -4,7 +4,7 @@ import MiCloud from "homebridge-miot/lib/protocol/MiCloud.js";
 import MiioProtocol from "homebridge-miot/lib/protocol/MiioProtocol.js";
 import { parseMiotOutletConfigs, type MiotOutletConfig, type MiotPropertyRef } from "@/lib/miot-config";
 import { fetchBrokerSession } from "@/lib/miot-session-broker";
-import { DEFAULT_MIOT_BROKER_SSH_HOST, DEFAULT_MIOT_BROKER_URL, type StoredPitConfig } from "@/lib/pit-config-model";
+import { DEFAULT_MIOT_BROKER_URL, type StoredPitConfig } from "@/lib/pit-config-model";
 import type { PowerChannel } from "@/types/pit";
 
 type Transport = "local" | "cloud";
@@ -19,6 +19,7 @@ export class MiotOutletManager {
   private brokerRefreshTimer: NodeJS.Timeout | null = null;
   private brokerRefreshedAt = 0;
   private pollTimer: NodeJS.Timeout | null = null;
+  private pollPromise: Promise<void> | null = null;
   private update: OutletUpdate | null = null;
   private readonly pollIntervalMs: number;
   private readonly cloudConfig: StoredPitConfig["miot"]["cloud"];
@@ -33,8 +34,6 @@ export class MiotOutletManager {
       password: process.env.MIOT_CLOUD_PASSWORD ?? "",
       session: process.env.MIOT_CLOUD_SESSION_JSON ?? "",
       brokerUrl: process.env.MIOT_SESSION_BROKER_URL ?? DEFAULT_MIOT_BROKER_URL,
-      brokerKey: process.env.MIOT_SESSION_BROKER_KEY ?? "",
-      brokerSshHost: process.env.MIOT_SESSION_BROKER_SSH_HOST ?? DEFAULT_MIOT_BROKER_SSH_HOST,
     };
     const debug = config?.debug ?? process.env.MIOT_DEBUG === "true";
     this.logger = {
@@ -89,7 +88,11 @@ export class MiotOutletManager {
   }
 
   private async pollAll() {
-    await Promise.allSettled(this.configs.map((config) => this.pollOne(config)));
+    if (this.pollPromise) return this.pollPromise;
+    this.pollPromise = Promise.allSettled(this.configs.map((config) => this.pollOne(config)))
+      .then(() => undefined)
+      .finally(() => { this.pollPromise = null; });
+    return this.pollPromise;
   }
 
   private async pollOne(config: MiotOutletConfig, preferred?: Transport) {
@@ -108,9 +111,9 @@ export class MiotOutletManager {
       const readings = Object.fromEntries(properties.map(([name], index) => [name, values[index]]));
       const on = propertyValue(readings.power);
       if (typeof on !== "boolean") throw new Error("插座开关属性返回值无效");
-      const watts = scaledValue(readings.watts, config.watts) ?? 0;
-      const volts = scaledValue(readings.volts, config.volts) ?? config.nominalVolts;
-      const amps = scaledValue(readings.amps, config.amps) ?? (volts > 0 ? watts / volts : 0);
+      const watts = scaledValue(readings.watts, config.watts);
+      const volts = scaledValue(readings.volts, config.volts);
+      const amps = scaledValue(readings.amps, config.amps);
       this.update?.({
         id: config.id,
         name: config.name,
@@ -135,11 +138,11 @@ export class MiotOutletManager {
         provider: "miot",
         transport: null,
         online: false,
-        volts: config.nominalVolts,
-        amps: 0,
-        watts: 0,
+        volts: null,
+        amps: null,
+        watts: null,
         on: false,
-        updatedAt: Date.now(),
+        updatedAt: 0,
       });
     }
   }

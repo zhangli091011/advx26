@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Panel, PitShell } from "@/components/pit/pit-shell";
-import { DEFAULT_MIOT_BROKER_SSH_HOST, DEFAULT_MIOT_BROKER_URL } from "@/lib/pit-config-model";
+import { DEFAULT_MIOT_BROKER_URL } from "@/lib/pit-config-model";
 import type { DiscoveredMiotDevice, MiotOutletInput, MiotPropertyInput, PitConfigTestResult, PitConfigView } from "@/types/pit-config";
 
 type DesktopWindow = Window & { pitDesktop?: { restartApplication(): Promise<void> } };
@@ -16,8 +16,7 @@ const EMPTY_CONFIG: PitConfigView = {
     debug: false,
     cloud: {
       region: "cn", username: "", password: "", passwordConfigured: false,
-      session: "", sessionConfigured: false, brokerUrl: DEFAULT_MIOT_BROKER_URL, brokerKey: "", brokerKeyConfigured: false,
-      brokerSshHost: DEFAULT_MIOT_BROKER_SSH_HOST,
+      session: "", sessionConfigured: false, brokerUrl: DEFAULT_MIOT_BROKER_URL,
     },
     outlets: [],
   },
@@ -27,14 +26,14 @@ const NEW_OUTLET: MiotOutletInput = {
   id: "CH1",
   name: "米家智能插座 3",
   zone: "工作台",
-  model: "xiaomi.plug.mcn005",
+  model: "cuco.plug.v3",
   ip: "",
   token: "",
   tokenConfigured: false,
   did: "",
   nominalVolts: 220,
   power: { siid: 2, piid: 1, scale: 1 },
-  watts: { siid: 3, piid: 2, scale: 1 },
+  watts: { siid: 11, piid: 2, scale: 1 },
   volts: null,
   amps: null,
 };
@@ -220,15 +219,6 @@ export function PitSettingsClient() {
           />
           <Field label="轮询间隔 ms" type="number" value={String(config.miot.pollIntervalMs)} onChange={(value) => setConfig({ ...config, miot: { ...config.miot, pollIntervalMs: Number(value) } })} />
           <Field label="Session Broker URL" value={config.miot.cloud.brokerUrl} onChange={(brokerUrl) => setConfig({ ...config, miot: { ...config.miot, cloud: { ...config.miot.cloud, brokerUrl } } })} />
-          <Field label="Broker SSH 主机" value={config.miot.cloud.brokerSshHost} onChange={(brokerSshHost) => setConfig({ ...config, miot: { ...config.miot, cloud: { ...config.miot.cloud, brokerSshHost } } })} />
-          <SecretField
-            label="设备 API 密钥"
-            value={config.miot.cloud.brokerKey}
-            configured={config.miot.cloud.brokerKeyConfigured}
-            clear={config.miot.cloud.clearBrokerKey === true}
-            onChange={(brokerKey) => setConfig({ ...config, miot: { ...config.miot, cloud: { ...config.miot.cloud, brokerKey, clearBrokerKey: false } } })}
-            onClear={(clearBrokerKey) => setConfig({ ...config, miot: { ...config.miot, cloud: { ...config.miot.cloud, clearBrokerKey } } })}
-          />
           <label className="pit-settings-check"><input type="checkbox" checked={config.miot.debug} onChange={(event) => setConfig({ ...config, miot: { ...config.miot, debug: event.target.checked } })} />启用 MIoT 调试日志</label>
           <button className="pit-settings-discover" type="button" disabled={discovering || loading} onClick={() => void discoverDevices()}>
             {discovering ? "正在获取云端 Session..." : "一键获取米家插座"}

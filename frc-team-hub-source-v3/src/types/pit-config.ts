@@ -44,10 +44,6 @@ export type PitConfigView = {
       sessionConfigured: boolean;
       clearSession?: boolean;
       brokerUrl: string;
-      brokerKey: string;
-      brokerKeyConfigured: boolean;
-      clearBrokerKey?: boolean;
-      brokerSshHost: string;
     };
     outlets: MiotOutletInput[];
   };

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DEFAULT_MIOT_BROKER_SSH_HOST, DEFAULT_MIOT_BROKER_URL, environmentPitConfig, mergePitConfigInput, parseStoredPitConfig, publicPitConfig } from "../src/lib/pit-config-model";
+import { DEFAULT_MIOT_BROKER_URL, environmentPitConfig, mergePitConfigInput, parseStoredPitConfig, publicPitConfig } from "../src/lib/pit-config-model";
 
 const base = parseStoredPitConfig({
   version: 1,
@@ -76,14 +76,12 @@ test("environment config remains the initial fallback", () => {
   assert.equal(config.miot.pollIntervalMs, 15_000);
   assert.equal(config.miot.debug, true);
   assert.equal(config.miot.cloud.brokerUrl, DEFAULT_MIOT_BROKER_URL);
-  assert.equal(config.miot.cloud.brokerSshHost, DEFAULT_MIOT_BROKER_SSH_HOST);
 });
 
-test("empty broker values in existing configs migrate to the built-in broker", () => {
+test("an empty broker URL in existing configs migrates to the built-in broker", () => {
   const config = parseStoredPitConfig({
     ...base,
-    miot: { ...base.miot, cloud: { ...base.miot.cloud, brokerUrl: "", brokerSshHost: "" } },
+    miot: { ...base.miot, cloud: { ...base.miot.cloud, brokerUrl: "" } },
   });
   assert.equal(config.miot.cloud.brokerUrl, DEFAULT_MIOT_BROKER_URL);
-  assert.equal(config.miot.cloud.brokerSshHost, DEFAULT_MIOT_BROKER_SSH_HOST);
 });

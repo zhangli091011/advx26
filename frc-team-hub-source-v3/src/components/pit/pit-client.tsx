@@ -90,7 +90,9 @@ export function PitClient() {
     lostCount: tools.filter((t) => t.state === "lost").length,
   }), [tools]);
 
-  const totalWatts = channels.reduce((s, c) => s + (c.on ? c.watts : 0), 0);
+  const measuredChannels = channels.filter((channel) => channel.online && channel.watts !== null);
+  const missingPowerMeasurements = channels.some((channel) => channel.online && channel.on && channel.watts === null);
+  const totalWatts = measuredChannels.reduce((sum, channel) => sum + (channel.on ? channel.watts ?? 0 : 0), 0);
 
   return (
     <div className="pit-stage">
@@ -178,7 +180,7 @@ export function PitClient() {
           <div key={c.id} className="pit-pwr-row" style={{ top: 61 + i * 56 }}>
             <span className="pit-pwr-name">{c.name}</span>
             <span className="pit-pwr-sub">
-              {`${c.id}  ·  ${c.amps.toFixed(1)}A${c.provider === "miot" ? `  ·  MIOT ${c.transport?.toUpperCase() ?? ""}` : ""}`}
+              {`${c.id}  ·  ${c.amps === null ? "—A" : `${c.amps.toFixed(2)}A`}${c.provider === "miot" ? `  ·  MIOT ${c.transport?.toUpperCase() ?? ""}` : ""}`}
             </span>
             <span className="pit-pwr-status" style={{ color: !c.online ? "var(--pit-err)" : c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>
               {!c.online ? "OFFLINE" : c.on ? "ON" : "OFF"}
@@ -194,7 +196,7 @@ export function PitClient() {
             </button>
           </div>
         ))}
-        <div className="pit-pwr-total">{channels.length ? `TOTAL  ${totalWatts}W` : "电源数据未配置"}</div>
+        <div className="pit-pwr-total">{measuredChannels.length ? `${missingPowerMeasurements ? "PARTIAL ≥" : "TOTAL  "}${totalWatts}W` : channels.length ? "等待实时功率" : "电源数据未配置"}</div>
       </Panel>
 
       {/* 工具管理 */}

@@ -45,21 +45,29 @@ export function parseMiotOutletConfigs(raw: string | undefined): MiotOutletConfi
     if (token && !/^[a-fA-F0-9]{32}$/.test(token)) throw new Error(`${id} 的 token 必须是 32 位十六进制`);
     if (!ip && !did) throw new Error(`${id} 至少需要局域网 ip/token 或云端 did`);
 
+    const model = optionalText(item.model);
     return {
       id,
       name: optionalText(item.name) ?? `米家智能插座 3 ${id}`,
       zone: optionalText(item.zone) ?? "米家",
-      model: optionalText(item.model),
+      model,
       ip,
       token: token?.toLowerCase(),
       did,
       nominalVolts: finitePositive(item.nominalVolts) ?? 220,
       power: propertyRef(item.power, `${id}.power`, { siid: 2, piid: 1, scale: 1 }),
-      watts: optionalPropertyRef(item.watts, `${id}.watts`),
+      watts: Object.hasOwn(item, "watts")
+        ? optionalPropertyRef(item.watts, `${id}.watts`)
+        : defaultWattsForModel(model),
       volts: optionalPropertyRef(item.volts, `${id}.volts`),
       amps: optionalPropertyRef(item.amps, `${id}.amps`),
     };
   });
+}
+
+function defaultWattsForModel(model: string | undefined) {
+  if (model === "cuco.plug.v3") return { siid: 11, piid: 2, scale: 1 };
+  return undefined;
 }
 
 function propertyRef(value: unknown, path: string, fallback?: MiotPropertyRef): MiotPropertyRef {

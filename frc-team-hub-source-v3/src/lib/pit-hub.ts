@@ -76,7 +76,7 @@ class PitHub extends EventEmitter {
         else this.state.channels.push(channel);
         this.state.channels.sort((a, b) => a.id.localeCompare(b.id));
         if (channel.online) this.state.connection.deviceLastSeen.miot = channel.updatedAt;
-        this.markUpdated(channel.updatedAt);
+        this.markUpdated(Date.now());
       });
     } catch (error) {
       console.error(`[miot] 配置加载失败：${error instanceof Error ? error.message : String(error)}`);

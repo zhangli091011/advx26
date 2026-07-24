@@ -32,3 +32,16 @@ test("discovery filters non-outlet devices", () => {
     token: "0123456789abcdef0123456789abcdef",
   }]), []);
 });
+
+test("discovery recognizes the deployed cuco plug mapping", () => {
+  const [device] = sanitizeDiscoveredDevices([{
+    did: "cuco-1",
+    name: "PIT power",
+    model: "cuco.plug.v3",
+    localip: "192.168.1.30",
+    token: "0123456789abcdef0123456789abcdef",
+    isOnline: true,
+  }]);
+  assert.equal(device.mappingKnown, true);
+  assert.equal(device.localAvailable, true);
+});

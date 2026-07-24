@@ -78,8 +78,6 @@ const server = http.createServer(async (request, response) => {
     });
   }
 
-  if (!authorized(request.headers.authorization)) return json(response, 401, { ok: false, error: "unauthorized" });
-
   if (request.url === "/v1/session" && request.method === "GET") {
     try {
       if (!session || Date.now() - lastValidatedAt > REFRESH_MS) await refreshSession();
@@ -88,6 +86,8 @@ const server = http.createServer(async (request, response) => {
       return json(response, 503, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   }
+
+  if (!authorized(request.headers.authorization)) return json(response, 401, { ok: false, error: "unauthorized" });
 
   if (request.url === "/v1/refresh" && request.method === "POST") {
     try {

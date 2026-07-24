@@ -2,7 +2,6 @@ import { parseMiotOutletConfigs, type MiotOutletConfig } from "@/lib/miot-config
 import type { PitConfigView } from "@/types/pit-config";
 
 export const DEFAULT_MIOT_BROKER_URL = "https://data.zhangli.online/pit-session";
-export const DEFAULT_MIOT_BROKER_SSH_HOST = "root@82.158.229.157";
 
 export type StoredPitConfig = {
   version: 1;
@@ -16,8 +15,6 @@ export type StoredPitConfig = {
       password: string;
       session: string;
       brokerUrl: string;
-      brokerKey: string;
-      brokerSshHost: string;
     };
     outlets: MiotOutletConfig[];
   };
@@ -40,8 +37,6 @@ export function environmentPitConfig(env: Record<string, string | undefined> = p
         password: env.MIOT_CLOUD_PASSWORD ?? "",
         session: env.MIOT_CLOUD_SESSION_JSON ?? "",
         brokerUrl: env.MIOT_SESSION_BROKER_URL ?? DEFAULT_MIOT_BROKER_URL,
-        brokerKey: env.MIOT_SESSION_BROKER_KEY ?? "",
-        brokerSshHost: env.MIOT_SESSION_BROKER_SSH_HOST ?? DEFAULT_MIOT_BROKER_SSH_HOST,
       },
       outlets: parseMiotOutletConfigs(env.MIOT_OUTLETS_JSON),
     },
@@ -71,8 +66,6 @@ export function parseStoredPitConfig(value: unknown): StoredPitConfig {
         password: optionalText(value.miot.cloud.password),
         session: validateSession(optionalText(value.miot.cloud.session)),
         brokerUrl: validateBrokerUrl(optionalText(value.miot.cloud.brokerUrl) || DEFAULT_MIOT_BROKER_URL),
-        brokerKey: optionalText(value.miot.cloud.brokerKey),
-        brokerSshHost: validateSshHost(optionalText(value.miot.cloud.brokerSshHost) || DEFAULT_MIOT_BROKER_SSH_HOST),
       },
       outlets,
     },
@@ -122,10 +115,6 @@ export function mergePitConfigInput(input: unknown, current: StoredPitConfig): S
           : optionalText(input.miot.cloud.password) || current.miot.cloud.password,
         session: cloudSession,
         brokerUrl: input.miot.cloud.brokerUrl,
-        brokerKey: input.miot.cloud.clearBrokerKey === true
-          ? ""
-          : optionalText(input.miot.cloud.brokerKey) || current.miot.cloud.brokerKey,
-        brokerSshHost: input.miot.cloud.brokerSshHost,
       },
       outlets,
     },
@@ -153,9 +142,6 @@ export function publicPitConfig(config: StoredPitConfig, configPath: string): Pi
         session: "",
         sessionConfigured: Boolean(config.miot.cloud.session),
         brokerUrl: config.miot.cloud.brokerUrl,
-        brokerKey: "",
-        brokerKeyConfigured: Boolean(config.miot.cloud.brokerKey),
-        brokerSshHost: config.miot.cloud.brokerSshHost,
       },
       outlets: config.miot.outlets.map((outlet) => ({
         id: outlet.id,
@@ -208,12 +194,6 @@ function validateBrokerUrl(value: string) {
   } catch {
     throw new Error("Session Broker 必须使用有效的 HTTPS URL");
   }
-}
-
-function validateSshHost(value: string) {
-  if (!value) return "";
-  if (!/^[A-Za-z0-9_.@:[\]-]+$/.test(value)) throw new Error("Session Broker SSH 主机格式无效");
-  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
