@@ -75,7 +75,7 @@ ip -details link show can0   # 确认 UP
 # 4) 项目
 git clone <repo> frc-team-hub && cd frc-team-hub
 npm ci && npm run build
-SEED_DEMO_DATA=false PIT_MQTT_URL=mqtt://127.0.0.1:1883 \
+PIT_MQTT_URL=mqtt://127.0.0.1:1883 \
 PIT_MQTT_USERNAME=pit-device PIT_MQTT_PASSWORD='<部署密码>' npm run start -- --port 3000
 
 # 5) 开机自启（systemd）
@@ -88,7 +88,6 @@ WorkingDirectory=/home/pi/frc-team-hub
 Environment=PIT_MQTT_URL=mqtt://127.0.0.1:1883
 Environment=PIT_MQTT_USERNAME=pit-device
 Environment=PIT_MQTT_PASSWORD=<部署密码>
-Environment=SEED_DEMO_DATA=false
 ExecStart=/usr/bin/npm run start -- --port 3000
 Restart=always
 User=pi

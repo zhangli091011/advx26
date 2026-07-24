@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["mqtt"],
+  output: "standalone",
+  serverExternalPackages: ["mqtt", "homebridge-miot"],
   turbopack: {
     root: process.cwd(),
   },

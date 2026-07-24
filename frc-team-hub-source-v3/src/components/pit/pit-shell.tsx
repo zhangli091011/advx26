@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { PitUpdateButton } from "@/components/pit/pit-update-button";
 
 /* ---------- shared shell for all PIT-OS sub-pages ---------- */
 
@@ -70,6 +71,7 @@ export function PitShell({
         <div className="pit-brand">FRC</div>
         <div className="pit-title">PIT-OS // {title}</div>
         <div className="pit-chips">
+          <PitUpdateButton />
           <div className="pit-clock">{clock}</div>
         </div>
       </header>

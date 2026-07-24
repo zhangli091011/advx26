@@ -34,6 +34,11 @@ export interface PowerChannel {
   amps: number;
   watts: number;
   on: boolean;
+  provider: "mqtt" | "miot";
+  transport: "local" | "cloud" | null;
+  online: boolean;
+  updatedAt: number;
+  model?: string;
 }
 
 export interface Battery {
@@ -60,6 +65,7 @@ export interface PitConnection {
   deviceLastSeen: {
     cabinet: number | null;
     power: number | null;
+    miot: number | null;
     can: number | null;
     vision: number | null;
   };
@@ -67,7 +73,7 @@ export interface PitConnection {
 
 export interface PitState {
   updatedAt: number;
-  source: "empty" | "demo" | "live";
+  source: "empty" | "live";
   connection: PitConnection;
   tools: PitTool[];
   units: RackUnit[];
@@ -75,6 +81,6 @@ export interface PitState {
   channels: PowerChannel[];
   batteries: Battery[];
   canDevices: CanDevice[];
-  env: { tempC: number; humidity: number };
+  env: { tempC: number | null; humidity: number | null };
   scanLog: Array<{ t: string; msg: string; kind: "ok" | "warn" | "err" }>;
 }

@@ -8,17 +8,6 @@ const DEV_COLS = [
   { label: "状态", x: 748 }, { label: "延迟", x: 868 }, { label: "温度", x: 968 },
 ];
 
-const BARS = [12, 18, 15, 22, 19, 25, 21, 28, 23, 30, 26, 20, 24, 27, 22, 18, 25, 29, 23, 19];
-
-const LOGS = [
-  { t: "14:32:06.412", lv: "INFO", col: "var(--pit-text-2)", msg: "[DRIVE-L1] velocity loop ok, 2.31 m/s" },
-  { t: "14:32:05.988", lv: "INFO", col: "var(--pit-ok)", msg: "[SHOOTER] flywheel 4820 rpm, ready" },
-  { t: "14:32:04.130", lv: "WARN", col: "var(--pit-warn)", msg: "[CLIMB] no heartbeat for 60000ms, marking offline" },
-  { t: "14:32:03.771", lv: "INFO", col: "var(--pit-text-2)", msg: "[PDH] channel 7 current 6.2A" },
-  { t: "14:32:02.554", lv: "ERROR", col: "var(--pit-err)", msg: "[CAN] device ID 31 unresponsive — check wiring" },
-  { t: "14:32:01.902", lv: "INFO", col: "var(--pit-text-2)", msg: "[INTAKE] note detected, beam break CH2" },
-];
-
 export function PitCanClient() {
   const { state } = usePitState();
   const devices = state?.canDevices ?? [];
@@ -26,10 +15,10 @@ export function PitCanClient() {
   const offline = devices.find((d) => !d.on);
 
   const SUMMARY = [
-    { lb: "总线负载", vl: devices.length ? "23%" : "—", col: "var(--pit-ok)" },
+    { lb: "总线负载", vl: "未配置", col: "var(--pit-text-2)" },
     { lb: "在线设备", vl: devices.length ? `${online}/${devices.length}` : "—", col: online === devices.length && devices.length ? "var(--pit-ok)" : "var(--pit-warn)" },
-    { lb: "错误帧", vl: "0", col: "var(--pit-ok)" },
-    { lb: "电压轨", vl: devices.length ? "12.4V" : "—", col: "var(--pit-ok)" },
+    { lb: "错误帧", vl: "未配置", col: "var(--pit-text-2)" },
+    { lb: "电压轨", vl: "未配置", col: "var(--pit-text-2)" },
   ];
 
   return (
@@ -96,21 +85,12 @@ export function PitCanClient() {
         })}
         <div className="pit-topo-rio-link" />
         <div className="pit-topo-rio">roboRIO</div>
-        <span className="pit-topo-chart-lb">总线负载 · 近 60s</span>
-        {BARS.map((h, i) => (
-          <div key={i} className="pit-topo-bar" style={{ left: 29 + i * 25, top: 469 - h * 4, height: h * 4, background: `rgba(255,199,0,${0.35 + (h / 30) * 0.5})` }} />
-        ))}
+        <span className="pit-topo-chart-lb">总线负载历史未配置</span>
       </Panel>
 
       {/* 串口日志 */}
       <Panel x={224} y={738} w={1656} h={298} title="串口 / 日志监视" en="SERIAL LOG · roboRIO">
-        {LOGS.map((l, i) => (
-          <div key={l.t} className="pit-log-row" style={{ top: 59 + i * 36 }}>
-            <time>{l.t}</time>
-            <span className="lv" style={{ color: l.col }}>{l.lv}</span>
-            <span className="msg">{l.msg}</span>
-          </div>
-        ))}
+        <div style={{ position: "absolute", inset: "58px 24px 24px", display: "grid", placeItems: "center", color: "var(--pit-text-2)", fontSize: 14 }}>串口日志源未配置</div>
       </Panel>
     </PitShell>
   );

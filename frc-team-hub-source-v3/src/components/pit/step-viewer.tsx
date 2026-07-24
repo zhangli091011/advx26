@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useRef, useState } from "react";
-import { defaultRobotPointCloud, stepToPointCloud, type PointCloudData } from "./step-points";
+import { stepToPointCloud, type PointCloudData } from "./step-points";
 
 // three.js 必须在客户端动态加载（禁用 SSR）
 const ParticleScene = dynamic(() => import("./particle-scene"), { ssr: false });
@@ -10,12 +10,13 @@ const ParticleScene = dynamic(() => import("./particle-scene"), { ssr: false });
 type LoadState = "idle" | "parsing" | "ready" | "error";
 
 export function StepViewer() {
-  const [cloud, setCloud] = useState<PointCloudData>(() => defaultRobotPointCloud());
+  const [cloud, setCloud] = useState<PointCloudData | null>(null);
   const [status, setStatus] = useState<LoadState>("idle");
-  const [fileName, setFileName] = useState("SPARK-III_chassis_v3.step");
+  const [fileName, setFileName] = useState("未导入 STEP 文件");
   const [assemble, setAssemble] = useState(1);
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const loadIdRef = useRef(0);
   const [dragOver, setDragOver] = useState(false);
 
   const loadFile = useCallback(async (file: File) => {
@@ -24,17 +25,20 @@ export function StepViewer() {
       setStatus("error");
       return;
     }
+    const loadId = ++loadIdRef.current;
     setStatus("parsing");
     setError("");
     setFileName(file.name);
     setAssemble(0);
     try {
       const data = await stepToPointCloud(file);
+      if (loadId !== loadIdRef.current) return;
       setCloud(data);
       setStatus("ready");
       // 触发聚合动画
       requestAnimationFrame(() => setAssemble(1));
     } catch (err) {
+      if (loadId !== loadIdRef.current) return;
       setError(err instanceof Error ? err.message : "解析失败");
       setStatus("error");
     }
@@ -51,10 +55,22 @@ export function StepViewer() {
   );
 
   return (
-    <>
+    <div
+      onDragEnter={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+      }}
+      onDrop={onDrop}
+      style={{ position: "absolute", inset: 0 }}
+    >
       {/* 3D 视口（铺满形象墙） */}
       <div style={{ position: "absolute", inset: 0 }}>
-        <ParticleScene data={cloud} assemble={assemble} />
+        {cloud ? <ParticleScene data={cloud} assemble={assemble} /> : (
+          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "var(--pit-text-2)", fontSize: 14 }}>
+            CAD 文件未配置
+          </div>
+        )}
       </div>
 
       {/* 顶部状态条 */}
@@ -68,12 +84,12 @@ export function StepViewer() {
         <span
           style={{
             fontSize: 11, fontWeight: 500,
-            color: status === "ready" || status === "idle" ? "var(--pit-ok)" : status === "parsing" ? "var(--pit-accent)" : "var(--pit-err)",
+            color: status === "ready" ? "var(--pit-ok)" : status === "parsing" ? "var(--pit-accent)" : status === "error" ? "var(--pit-err)" : "var(--pit-text-2)",
           }}
         >
-          {status === "idle" && "● 默认模型"}
+          {status === "idle" && "未配置"}
           {status === "parsing" && "◐ 解析中…"}
-          {status === "ready" && `● 已加载 · ${cloud.count.toLocaleString()} 粒子`}
+          {status === "ready" && cloud && `● 已加载 · ${cloud.count.toLocaleString()} 粒子`}
           {status === "error" && `○ ${error}`}
         </span>
       </div>
@@ -82,19 +98,21 @@ export function StepViewer() {
       <div style={{ position: "absolute", right: 24, bottom: 20, zIndex: 2, display: "flex", gap: 10 }}>
         <button
           type="button"
+          disabled={status === "parsing"}
           onClick={() => inputRef.current?.click()}
           style={{
             height: 40, padding: "0 18px",
             border: "1px solid var(--pit-accent)",
             background: "rgba(255,199,0,0.12)",
-            color: "var(--pit-accent)", fontSize: 13, fontWeight: 500, cursor: "pointer",
+            color: "var(--pit-accent)", fontSize: 13, fontWeight: 500,
+            cursor: status === "parsing" ? "wait" : "pointer", opacity: status === "parsing" ? 0.6 : 1,
           }}
         >
           ⤒ 导入 STEP 文件
         </button>
         <button
           type="button"
-          onClick={() => { setCloud(defaultRobotPointCloud()); setFileName("SPARK-III_chassis_v3.step"); setStatus("idle"); setAssemble(0); requestAnimationFrame(() => setAssemble(1)); }}
+          onClick={() => { setCloud(null); setFileName("未导入 STEP 文件"); setStatus("idle"); setAssemble(0); setError(""); }}
           style={{
             height: 40, padding: "0 14px",
             border: "1px solid var(--pit-line)",
@@ -121,12 +139,9 @@ export function StepViewer() {
 
       {/* 拖拽覆盖层 */}
       <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
         style={{
           position: "absolute", inset: 0, zIndex: 3,
-          pointerEvents: dragOver ? "auto" : "none",
+          pointerEvents: "none",
           background: dragOver ? "rgba(255,199,0,0.08)" : "transparent",
           border: dragOver ? "2px dashed var(--pit-accent)" : "2px dashed transparent",
           display: "grid", placeItems: "center",
@@ -140,12 +155,6 @@ export function StepViewer() {
         ) : null}
       </div>
 
-      {/* 全局拖拽监听（让按钮区域之外也能拖入） */}
-      <div
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={onDrop}
-        style={{ position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none" }}
-      />
-    </>
+    </div>
   );
 }

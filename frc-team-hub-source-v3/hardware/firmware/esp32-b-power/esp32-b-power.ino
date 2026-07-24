@@ -103,7 +103,7 @@ void publishEnv() {
   float t1 = sensors.getTempCByIndex(1);
   String payload = "{";
   payload += "\"tempC\":" + String(t0, 1) + ",";
-  payload += "\"humidity\":46";
+  payload += "\"humidity\":null";  // 未安装湿度传感器
   payload += "}";
   mqtt.publish("pit/esp32-b/env", payload.c_str(), true);
 

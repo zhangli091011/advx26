@@ -5,13 +5,11 @@ import { Panel, PitShell } from "@/components/pit/pit-shell";
 import { pitControl, usePitState } from "@/components/pit/use-pit-state";
 
 const RULES = [
-  { t: "过流保护", d: "任意通道 > 16A 由分控立即断电", s: "固件启用", col: "var(--pit-ok)" },
-  { t: "温度监控", d: "箱内 > 60°C 由分控关闭全部通道", s: "固件启用", col: "var(--pit-ok)" },
-  { t: "自动策略", d: "赛前自动上电策略尚未接入赛事数据", s: "未配置", col: "var(--pit-warn)" },
-  { t: "离场模式", d: "批量关闭与保留通道策略尚未实现", s: "未配置", col: "var(--pit-warn)" },
+  { t: "过流保护", d: "未收到分控能力配置", s: "未配置" },
+  { t: "温度监控", d: "未收到分控能力配置", s: "未配置" },
+  { t: "自动策略", d: "未接入赛事和策略配置", s: "未配置" },
+  { t: "离场模式", d: "未接入批量控制策略", s: "未配置" },
 ];
-
-const LIMIT = 1500;
 
 export function PitPowerClient() {
   const { state } = usePitState();
@@ -20,9 +18,6 @@ export function PitPowerClient() {
   const batteries = state?.batteries ?? [];
 
   const total = channels.reduce((sum, channel) => sum + (channel.on ? channel.watts : 0), 0);
-  const pct = Math.round((total / LIMIT) * 100);
-  const powerOnline = state?.connection.brokerConnected === true
-    && state.connection.deviceLastSeen.power !== null;
 
   async function togglePower(id: string, on: boolean) {
     setControlError(null);
@@ -43,21 +38,28 @@ export function PitPowerClient() {
             <span className="pit-ch-name" style={{ color: c.on ? "var(--pit-text)" : "var(--pit-text-2)" }}>{c.name}</span>
             <span className="pit-ch-spec">{`${c.volts}V · ${c.amps.toFixed(1)}A · ${c.watts}W`}</span>
             <span className="pit-ch-zone">{c.zone}</span>
-            <span className="pit-ch-status" style={{ color: c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>{c.on ? "ON" : "OFF"}</span>
+            <span className="pit-ch-status" style={{ color: !c.online ? "var(--pit-err)" : c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>
+              {!c.online ? "OFFLINE" : c.on ? "ON" : "OFF"}
+            </span>
             <button
               type="button"
               className={`pit-toggle lg ${c.on ? "on" : ""}`}
               aria-label={`${c.name} 电源开关`}
-              disabled={!powerOnline}
+              disabled={!c.online}
               onClick={() => void togglePower(c.id, !c.on)}
             >
               <i />
             </button>
+            {c.provider === "miot" ? (
+              <span style={{ position: "absolute", right: 18, top: 47, color: "var(--pit-blue)", fontSize: 9, letterSpacing: 1 }}>
+                MIOT {c.transport?.toUpperCase() ?? "OFFLINE"}
+              </span>
+            ) : null}
           </div>
         ))}
         {channels.length === 0 ? (
           <div style={{ position: "absolute", left: 24, top: 200, color: "var(--pit-text-2)", fontSize: 13 }}>
-            等待配电箱数据…（pit/esp32-b/power/*）
+            等待电源数据…（MQTT 或 MIOT_OUTLETS_JSON）
           </div>
         ) : null}
         {controlError ? (
@@ -70,16 +72,16 @@ export function PitPowerClient() {
       {/* 总负载 */}
       <Panel x={1320} y={96} w={560} h={300} title="总负载" en="TOTAL LOAD">
         <span style={{ position: "absolute", left: 29, top: 63, color: "var(--pit-accent)", fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 64, lineHeight: 1 }}>
-          {total}W
+          {channels.length ? `${total}W` : "—"}
         </span>
         <span style={{ position: "absolute", left: 31, top: 149, color: "var(--pit-text-2)", fontSize: 13 }}>
-          限额 {LIMIT}W · 峰值 1180W (13:20)
+          {channels.length ? "负载限额与峰值统计未配置" : "电源数据未配置"}
         </span>
         <div className="pit-bar" style={{ left: 31, top: 189, width: 496, height: 10 }}>
-          <i style={{ width: `${pct}%`, background: "var(--pit-accent)" }} />
+          <i style={{ width: "0%", background: "var(--pit-accent)" }} />
         </div>
         <span style={{ position: "absolute", left: 31, top: 211, color: "var(--pit-ok)", fontSize: 13, fontWeight: 500 }}>
-          {pct}% · {pct < 80 ? "余量充足" : "接近限额"}
+          负载阈值未配置
         </span>
       </Panel>
 
@@ -110,7 +112,7 @@ export function PitPowerClient() {
           <div key={r.t} className="pit-rule-row" style={{ top: 63 + i * 52 }}>
             <span className="t">{r.t}</span>
             <span className="d">{r.d}</span>
-            <span className="s" style={{ color: r.col }}>{r.s}</span>
+            <span className="s" style={{ color: "var(--pit-warn)" }}>{r.s}</span>
           </div>
         ))}
       </Panel>

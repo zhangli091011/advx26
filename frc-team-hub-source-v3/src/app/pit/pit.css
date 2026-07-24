@@ -121,6 +121,27 @@
   font-family: var(--font-tech); font-weight: 700; font-size: 26px;
   align-self: center;
 }
+.pit-update-btn {
+  min-width: 116px;
+  height: 36px;
+  align-self: center;
+  padding: 0 12px;
+  border: 1px solid var(--pit-line);
+  background: var(--pit-panel-2);
+  color: var(--pit-text-2);
+  font-family: var(--font-tech);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+.pit-update-btn:hover:not(:disabled) {
+  border-color: var(--pit-accent);
+  color: var(--pit-accent);
+}
+.pit-update-btn:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
 
 /* ---------- nav rail ---------- */
 .pit-nav {

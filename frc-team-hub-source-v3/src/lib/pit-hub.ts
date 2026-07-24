@@ -2,6 +2,7 @@ import "server-only";
 
 import mqtt from "mqtt";
 import { EventEmitter } from "node:events";
+import { MiotOutletManager } from "@/lib/miot-outlets";
 import type {
   Battery,
   Compartment,
@@ -38,7 +39,7 @@ function emptyState(): PitState {
     connection: {
       brokerConnected: false,
       lastMessageAt: null,
-      deviceLastSeen: { cabinet: null, power: null, can: null, vision: null },
+      deviceLastSeen: { cabinet: null, power: null, miot: null, can: null, vision: null },
     },
     tools: [],
     units: [],
@@ -46,7 +47,7 @@ function emptyState(): PitState {
     channels: [],
     batteries: [],
     canDevices: [],
-    env: { tempC: 0, humidity: 0 },
+    env: { tempC: null, humidity: null },
     scanLog: [],
   };
 }
@@ -59,11 +60,26 @@ const globalForPit = globalThis as unknown as {
 class PitHub extends EventEmitter {
   state: PitState = emptyState();
   private client: mqtt.MqttClient | null = null;
+  private miot: MiotOutletManager | null = null;
   private started = false;
 
   start() {
     if (this.started) return;
     this.started = true;
+    try {
+      this.miot = new MiotOutletManager();
+      this.miot.start((channel) => {
+        const index = this.state.channels.findIndex((item) => item.id === channel.id);
+        if (index >= 0) this.state.channels[index] = channel;
+        else this.state.channels.push(channel);
+        this.state.channels.sort((a, b) => a.id.localeCompare(b.id));
+        if (channel.online) this.state.connection.deviceLastSeen.miot = channel.updatedAt;
+        this.markUpdated(channel.updatedAt);
+      });
+    } catch (error) {
+      console.error(`[miot] 配置加载失败：${error instanceof Error ? error.message : String(error)}`);
+      this.miot = null;
+    }
     const url = process.env.PIT_MQTT_URL ?? "mqtt://127.0.0.1:1883";
     try {
       this.client = mqtt.connect(url, {
@@ -142,13 +158,15 @@ class PitHub extends EventEmitter {
     const d = asRecord(data);
     if (!d) return false;
     if (parts[2] === "tools" && parts[3]) {
+      const state = oneOf(d.state, ["in", "out", "lost"] as const);
+      if (!state) return false;
       const slot = parts[3];
       const idx = this.state.tools.findIndex((t) => t.slot === slot);
       const tool: PitTool = {
         slot,
         name: String(d.name ?? slot),
         unit: String(d.unit ?? slot.split("-")[0]),
-        state: oneOf(d.state, ["in", "out", "lost"] as const, "in"),
+        state,
         who: optionalText(d.who),
         time: optionalText(d.time),
         qr: optionalText(d.qr),
@@ -157,6 +175,9 @@ class PitHub extends EventEmitter {
       else this.state.tools.push(tool);
       this.state.tools.sort((a, b) => a.slot.localeCompare(b.slot));
     } else if (parts[2] === "units" && parts[3]) {
+      const level = oneOf(d.level, ["ok", "low", "active"] as const);
+      const pct = finiteNumber(d.pct, 0, 100);
+      if (!level || pct === null) return false;
       const u = parts[3];
       const idx = this.state.units.findIndex((x) => x.u === u);
       const unit: RackUnit = {
@@ -164,20 +185,23 @@ class PitHub extends EventEmitter {
         name: String(d.name ?? u),
         note: String(d.note ?? ""),
         status: String(d.status ?? ""),
-        level: oneOf(d.level, ["ok", "low", "active"] as const, "ok"),
-        pct: finiteNumber(d.pct, 0, 0, 100),
+        level,
+        pct,
       };
       if (idx >= 0) this.state.units[idx] = unit;
       else this.state.units.push(unit);
       this.state.units.sort((a, b) => a.u.localeCompare(b.u));
     } else if (parts[2] === "compartments" && parts[3]) {
+      const qty = finiteNumber(d.qty, 0, 1_000_000);
+      const state = oneOf(d.state, ["ok", "low", "empty", "active"] as const);
+      if (qty === null || !state) return false;
       const id = parts[3];
       const idx = this.state.compartments.findIndex((c) => c.id === id);
       const comp: Compartment = {
         id,
         label: String(d.label ?? id),
-        qty: finiteNumber(d.qty, 0, 0, 1_000_000),
-        state: oneOf(d.state, ["ok", "low", "empty", "active"] as const, "ok"),
+        qty,
+        state,
       };
       if (idx >= 0) this.state.compartments[idx] = comp;
       else this.state.compartments.push(comp);
@@ -190,36 +214,51 @@ class PitHub extends EventEmitter {
     const d = asRecord(data);
     if (!d) return false;
     if (parts[2] === "power" && parts[3]) {
+      if (this.miot?.hasChannel(parts[3])) return false;
+      const volts = finiteNumber(d.volts, 0, 500);
+      const amps = finiteNumber(d.amps, 0, 100);
+      const watts = finiteNumber(d.watts, 0, 50_000);
+      if (volts === null || amps === null || watts === null || typeof d.on !== "boolean") return false;
       const id = parts[3];
       const idx = this.state.channels.findIndex((c) => c.id === id);
       const ch: PowerChannel = {
         id,
         name: String(d.name ?? id),
         zone: String(d.zone ?? ""),
-        volts: finiteNumber(d.volts, 0, 0, 500),
-        amps: finiteNumber(d.amps, 0, 0, 100),
-        watts: finiteNumber(d.watts, 0, 0, 50_000),
-        on: d.on === true,
+        volts,
+        amps,
+        watts,
+        on: d.on,
+        provider: "mqtt",
+        transport: null,
+        online: true,
+        updatedAt: Date.now(),
       };
       if (idx >= 0) this.state.channels[idx] = ch;
       else this.state.channels.push(ch);
       this.state.channels.sort((a, b) => a.id.localeCompare(b.id));
     } else if (parts[2] === "battery" && parts[3]) {
+      const pct = finiteNumber(d.pct, 0, 100);
+      const volts = finiteNumber(d.volts, 0, 100);
+      if (pct === null || volts === null || typeof d.charging !== "boolean") return false;
       const id = parts[3];
       const idx = this.state.batteries.findIndex((b) => b.id === id);
       const bat: Battery = {
         id,
-        pct: finiteNumber(d.pct, 0, 0, 100),
-        charging: d.charging === true,
-        volts: finiteNumber(d.volts, 0, 0, 100),
+        pct,
+        charging: d.charging,
+        volts,
       };
       if (idx >= 0) this.state.batteries[idx] = bat;
       else this.state.batteries.push(bat);
       this.state.batteries.sort((a, b) => a.id.localeCompare(b.id));
     } else if (parts[2] === "env") {
+      const tempC = finiteNumber(d.tempC, -50, 150);
+      const humidity = d.humidity == null ? null : finiteNumber(d.humidity, 0, 100);
+      if (tempC === null) return false;
       this.state.env = {
-        tempC: finiteNumber(d.tempC, 0, -50, 150),
-        humidity: finiteNumber(d.humidity, 0, 0, 100),
+        tempC,
+        humidity,
       };
     } else return false;
     return true;
@@ -228,16 +267,20 @@ class PitHub extends EventEmitter {
   /* 机器人 CAN（来自 USB-CAN 适配器 + TunerX 服务） */
   private handleCan(parts: string[], data: unknown) {
     if (parts[2] !== "devices" || !Array.isArray(data)) return false;
-    this.state.canDevices = data.slice(0, 128).filter(isRecord).map((d) => ({
-      id: String(d.id ?? ""),
-      name: String(d.name ?? ""),
-      model: String(d.model ?? ""),
-      mech: String(d.mech ?? ""),
-      on: Boolean(d.on),
-      latencyMs: d.latencyMs == null ? null : finiteNumber(d.latencyMs, 0, 0, 60_000),
-      tempC: d.tempC == null ? null : finiteNumber(d.tempC, 0, -50, 200),
-      lastHeartbeat: finiteNumber(d.lastHeartbeat, 0, 0, Number.MAX_SAFE_INTEGER),
-    }));
+    this.state.canDevices = data.slice(0, 128).filter(isRecord).flatMap((d) => {
+      const lastHeartbeat = finiteNumber(d.lastHeartbeat, 0, Number.MAX_SAFE_INTEGER);
+      if (typeof d.id !== "string" || typeof d.on !== "boolean" || lastHeartbeat === null) return [];
+      return [{
+        id: d.id,
+        name: String(d.name ?? ""),
+        model: String(d.model ?? ""),
+        mech: String(d.mech ?? ""),
+        on: d.on,
+        latencyMs: d.latencyMs == null ? null : finiteNumber(d.latencyMs, 0, 60_000),
+        tempC: d.tempC == null ? null : finiteNumber(d.tempC, -50, 200),
+        lastHeartbeat,
+      }];
+    });
     return true;
   }
 
@@ -245,10 +288,12 @@ class PitHub extends EventEmitter {
   private handleVision(_parts: string[], data: unknown) {
     const d = asRecord(data);
     if (!d) return false;
+    const kind = oneOf(d.kind, ["ok", "warn", "err"] as const);
+    if (!kind || typeof d.msg !== "string") return false;
     const entry = {
       t: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-      msg: String(d.msg ?? "").slice(0, 500),
-      kind: oneOf(d.kind, ["ok", "warn", "err"] as const, "ok"),
+      msg: d.msg.slice(0, 500),
+      kind,
     };
     this.state.scanLog.unshift(entry);
     this.state.scanLog = this.state.scanLog.slice(0, 20);
@@ -264,6 +309,15 @@ class PitHub extends EventEmitter {
       });
     });
   }
+
+  hasMiotChannel(id: string) {
+    return this.miot?.hasChannel(id) ?? false;
+  }
+
+  async setMiotPower(id: string, on: boolean) {
+    if (!this.miot) throw new Error("米家插座未配置");
+    return this.miot.setPower(id, on);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -278,13 +332,13 @@ function optionalText(value: unknown) {
   return typeof value === "string" ? value.slice(0, 200) : undefined;
 }
 
-function finiteNumber(value: unknown, fallback: number, min: number, max: number) {
+function finiteNumber(value: unknown, min: number, max: number) {
   const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : fallback;
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, number)) : null;
 }
 
-function oneOf<const T extends readonly string[]>(value: unknown, choices: T, fallback: T[number]): T[number] {
-  return typeof value === "string" && choices.includes(value) ? value as T[number] : fallback;
+function oneOf<const T extends readonly string[]>(value: unknown, choices: T): T[number] | null {
+  return typeof value === "string" && choices.includes(value) ? value as T[number] : null;
 }
 
 export function getPitHub(): PitHub {

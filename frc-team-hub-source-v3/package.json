@@ -1,18 +1,25 @@
 {
   "name": "pit-os",
-  "version": "0.1.0",
+  "version": "0.2.3",
   "private": true,
+  "main": "electron/main.mjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test tests/**/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "desktop:prepare": "node scripts/prepare-desktop.mjs",
+    "desktop:package": "npm run build && npm run desktop:prepare && electron-builder --win nsis",
+    "desktop:build": "node scripts/build-desktop.mjs",
+    "desktop:publish": "node scripts/publish-desktop.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
+    "electron-updater": "^6.8.9",
+    "homebridge-miot": "1.9.0",
     "mqtt": "^5.15.2",
     "next": "16.2.11",
     "occt-import-js": "^0.0.23",
@@ -26,10 +33,47 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.185.1",
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
     "tsx": "^4.20.6",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "cn.advx.pitos",
+    "productName": "ADVX PIT OS",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "desktop/next-app",
+        "to": "next-app"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false,
+      "artifactName": "ADVX-PIT-OS-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "ADVX PIT OS"
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://82.158.229.157/updates/"
+      }
+    ]
   }
 }

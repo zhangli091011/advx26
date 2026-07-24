@@ -75,9 +75,9 @@ export function PitToolsClient() {
             style={{ background: "transparent", border: 0, outline: "none", color: "var(--pit-text)", width: "100%", font: "inherit" }}
           />
         </div>
-        <button type="button" className="pit-tbtn primary" style={{ left: 978, width: 108 }}>+ 登记新工具</button>
-        <button type="button" className="pit-tbtn" style={{ left: 1098, width: 100 }}>⇲ 批量归还</button>
-        <button type="button" className="pit-tbtn" style={{ left: 1210, width: 113 }}>◉ 指示灯寻物</button>
+        <button type="button" className="pit-tbtn primary" style={{ left: 978, width: 108 }} disabled>未配置</button>
+        <button type="button" className="pit-tbtn" style={{ left: 1098, width: 100 }} disabled>未配置</button>
+        <button type="button" className="pit-tbtn" style={{ left: 1210, width: 113 }} disabled>未配置</button>
         <div className="pit-th-bg" />
         {COLS.map((c) => (
           <span key={c.label} className="pit-th" style={{ left: c.x }}>{c.label}</span>
@@ -126,8 +126,8 @@ export function PitToolsClient() {
       {/* 右下：今日统计 */}
       <Panel x={1060} y={732} w={820} h={304} title="今日统计" en="DAILY STATS">
         {[
-          { v: "27", l: "借出次数", x: 40, c: "var(--pit-accent)" },
-          { v: "25", l: "归还次数", x: 235, c: "var(--pit-ok)" },
+          { v: "—", l: "借出次数（未配置）", x: 40, c: "var(--pit-text-2)" },
+          { v: "—", l: "归还次数（未配置）", x: 235, c: "var(--pit-text-2)" },
           { v: String(allTools.filter((t) => t.state === "out").length), l: "当前在外", x: 430, c: "var(--pit-warn)" },
           { v: String(allTools.filter((t) => t.state === "lost").length), l: "超时未还", x: 625, c: "var(--pit-err)" },
         ].map((s) => (
@@ -140,8 +140,7 @@ export function PitToolsClient() {
           <i style={{ width: allTools.length ? `${(allTools.filter((t) => t.state === "in").length / allTools.length) * 100}%` : "0%", background: "var(--pit-ok)" }} />
         </div>
         <span style={{ position: "absolute", left: 31, top: 249, color: "var(--pit-text-2)", fontSize: 13 }}>
-          在位率 {allTools.length ? Math.round((allTools.filter((t) => t.state === "in").length / allTools.length) * 100) : 0}%
-          （{allTools.filter((t) => t.state === "in").length}/{allTools.length}）· 目标 ≥ 95%
+          在位率 {allTools.length ? `${Math.round((allTools.filter((t) => t.state === "in").length / allTools.length) * 100)}%（${allTools.filter((t) => t.state === "in").length}/${allTools.length}）` : "未配置"}
         </span>
       </Panel>
     </PitShell>

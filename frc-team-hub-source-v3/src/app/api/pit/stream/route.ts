@@ -1,5 +1,4 @@
 import { getPitHub } from "@/lib/pit-hub";
-import { getPitState } from "@/lib/pit-seed";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +15,7 @@ export async function GET(request: Request) {
       const send = () => {
         if (closed) return;
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(getPitState())}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(hub.state)}\n\n`));
         } catch {
           cleanup();
         }

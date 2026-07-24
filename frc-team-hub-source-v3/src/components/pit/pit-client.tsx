@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { pitControl, usePitState, type PitTool, type ToolState } from "@/components/pit/use-pit-state";
+import { PitUpdateButton } from "@/components/pit/pit-update-button";
+import { pitControl, usePitState, type PitTool } from "@/components/pit/use-pit-state";
+import type { PitState, RackUnit } from "@/types/pit";
 
 /* 静态导航与展示常量（非设备状态） */
 const NAV = [
@@ -15,33 +17,6 @@ const NAV = [
   { zh: "战队展示", en: "TEAM", icon: "team", href: "/pit/team" },
 ];
 const EMPTY_TOOLS: PitTool[] = [];
-
-const SCHEDULE = [
-  { m: "Q-38", t: "10:24", pos: "BLUE 1", kind: "blue" },
-  { m: "Q-40", t: "11:02", pos: "—", kind: "none" },
-  { m: "Q-42", t: "14:40", pos: "RED 2", kind: "red", current: true },
-  { m: "Q-47", t: "15:35", pos: "BLUE 3", kind: "blue" },
-  { m: "Q-53", t: "16:50", pos: "待抽签", kind: "none" },
-];
-
-const LOW_STOCK = [
-  { name: "M4 内六角螺丝 ×20mm", sub: "剩余 12  ·  建议补 100" },
-  { name: "扎带 2.5×100mm", sub: "剩余 1 包  ·  建议补 10 包" },
-  { name: "Anderson SB50 接头", sub: "剩余 3  ·  建议补 20" },
-];
-
-const TRAYS = [
-  { t: "① 拆卸", c: "M4×8 弹垫×8" },
-  { t: "② 待装", c: "链轮×1 卡簧×2" },
-  { t: "③ 废件", c: "断裂扎带" },
-];
-
-const RFID_LOG = [
-  { t: "13:58", msg: "张工 借出（未归还）", color: "var(--pit-err)" },
-  { t: "12:31", msg: "归还 → 自动识别入位 U1-03", color: "var(--pit-ok)" },
-  { t: "11:05", msg: "李工 借出", color: "var(--pit-accent)" },
-  { t: "10:47", msg: "归还 → 自动识别入位 U1-03", color: "var(--pit-ok)" },
-];
 
 function NavIcon({ kind, active }: { kind: string; active: boolean }) {
   const c = active ? "var(--pit-accent)" : "var(--pit-text-2)";
@@ -99,15 +74,6 @@ export function PitClient() {
     return [now.getHours(), now.getMinutes(), now.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
   }, [now]);
 
-  const countdown = useMemo(() => {
-    if (!now) return "08:47";
-    const target = new Date(now);
-    target.setHours(14, 40, 0, 0);
-    let diff = Math.floor((target.getTime() - now.getTime()) / 1000);
-    if (diff < 0 || diff > 2 * 3600) diff = 8 * 60 + 47;
-    return `${String(Math.floor(diff / 60)).padStart(2, "0")}:${String(diff % 60).padStart(2, "0")}`;
-  }, [now]);
-
   /* 真实数据（无数据时显示空态） */
   const tools = state?.tools ?? EMPTY_TOOLS;
   const units = state?.units ?? [];
@@ -143,13 +109,14 @@ export function PitClient() {
         <div className="pit-title">PIT-OS // SMART TOOLBOX</div>
         <div className="pit-subtitle">智能工具箱控制系统  V2.4.1</div>
         <div className="pit-chips">
+          <PitUpdateButton />
           <div className="pit-chip">
             <i style={{ background: brokerOnline ? "var(--pit-ok)" : "var(--pit-err)" }} />
             <small>MQTT</small><strong>{brokerOnline ? "ONLINE" : "OFFLINE"}</strong>
           </div>
           <div className="pit-chip">
             <i style={{ background: "var(--pit-accent)" }} />
-            <small>PWR</small><strong>{state ? `${state.env.tempC.toFixed(1)}°C` : "—"}</strong>
+            <small>PWR</small><strong>{state?.env.tempC == null ? "未配置" : `${state.env.tempC.toFixed(1)}°C`}</strong>
           </div>
           <div className="pit-chip">
             <i style={{ background: "var(--pit-ok)" }} />
@@ -179,20 +146,7 @@ export function PitClient() {
 
       {/* 下一场比赛 */}
       <Panel x={224} y={96} w={560} h={300} title="下一场比赛" en="NEXT MATCH">
-        <div className="pit-match-label">QUALIFICATION</div>
-        <div className="pit-match-num">Q-42</div>
-        <div className="pit-countdown-label">倒计时</div>
-        <div className="pit-countdown">{countdown}</div>
-        <div className="pit-alliance">
-          <strong>RED ALLIANCE</strong>
-          <span className="pos">红方 · 2 号位</span>
-          <span className="teams">8888  ·  6666  ·  2333</span>
-          <span className="us">我方 8888（主队）</span>
-        </div>
-        <div className="pit-field-label">场地位置</div>
-        {["S1", "S2", "S3"].map((s, i) => (
-          <div key={s} className={`pit-field-cell ${i === 1 ? "us" : ""}`} style={{ left: 109 + i * 66 }}>{s}</div>
-        ))}
+        <Unconfigured label="赛事 API 未配置" />
       </Panel>
 
       {/* CAN 总线 */}
@@ -219,21 +173,24 @@ export function PitClient() {
         {channels.slice(0, 4).map((c, i) => (
           <div key={c.id} className="pit-pwr-row" style={{ top: 61 + i * 56 }}>
             <span className="pit-pwr-name">{c.name}</span>
-            <span className="pit-pwr-sub">{`${c.id}  ·  ${c.amps.toFixed(1)}A`}</span>
-            <span className="pit-pwr-status" style={{ color: c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>
-              {c.on ? "ON" : "OFF"}
+            <span className="pit-pwr-sub">
+              {`${c.id}  ·  ${c.amps.toFixed(1)}A${c.provider === "miot" ? `  ·  MIOT ${c.transport?.toUpperCase() ?? ""}` : ""}`}
+            </span>
+            <span className="pit-pwr-status" style={{ color: !c.online ? "var(--pit-err)" : c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>
+              {!c.online ? "OFFLINE" : c.on ? "ON" : "OFF"}
             </span>
             <button
               type="button"
               className={`pit-toggle ${c.on ? "on" : ""}`}
               aria-label={`${c.name} 电源开关`}
+              disabled={!c.online}
               onClick={() => void pitControl("power", c.id, !c.on)}
             >
               <i />
             </button>
           </div>
         ))}
-        <div className="pit-pwr-total">{`TOTAL  ${totalWatts}W  /  LIMIT 1500W`}</div>
+        <div className="pit-pwr-total">{channels.length ? `TOTAL  ${totalWatts}W` : "电源数据未配置"}</div>
       </Panel>
 
       {/* 工具管理 */}
@@ -292,74 +249,26 @@ export function PitClient() {
           </button>
         ))}
         <div className="pit-panel-divider" style={{ top: 315 }} />
-        <div className="pit-parts-warn">⚠ 低库存预警（同步采购清单）</div>
-        {LOW_STOCK.map((l, i) => (
-          <div key={l.name} className="pit-low-row" style={{ top: 357 + i * 52 }}>
-            <span>
-              <span className="nm">{l.name}</span>
-              <br />
-              <span className="sub">{l.sub}</span>
-            </span>
-            <button type="button" className="pit-buy-btn">+ 采购</button>
-          </div>
-        ))}
+        <div className="pit-parts-warn">⚠ 低库存预警</div>
+        <div style={{ position: "absolute", left: 29, top: 370, color: "var(--pit-text-2)", fontSize: 13 }}>采购规则未配置</div>
         <div className="pit-panel-divider" style={{ top: 529 }} />
         <div className="pit-tray-title">本次维修临时收纳 · 按工序分组</div>
-        {TRAYS.map((t, i) => (
-          <div key={t.t} className="pit-tray" style={{ left: 23 + i * 174 }}>
-            <strong>{t.t}</strong>
-            <span>{t.c}</span>
-          </div>
-        ))}
+        <div style={{ position: "absolute", left: 29, top: 565, color: "var(--pit-text-2)", fontSize: 13 }}>维修工单未配置</div>
       </Panel>
 
       {/* CAD 快速查阅 */}
       <Panel x={1356} y={412} w={524} h={300} title="CAD 快速查阅" en="CAD VIEWER">
-        <div className="pit-cad-viewport">
-          {[52, 105, 158, 211, 264].map((l) => (
-            <div key={l} style={{ position: "absolute", left: l, top: -1, width: 1, height: 224, background: "rgba(56,59,64,0.3)" }} />
-          ))}
-          {[44, 89, 134, 179].map((t) => (
-            <div key={t} style={{ position: "absolute", left: -1, top: t, width: 320, height: 1, background: "rgba(56,59,64,0.3)" }} />
-          ))}
-          <svg style={{ position: "absolute", left: 0, top: 0 }} width="320" height="224" viewBox="0 0 320 224" aria-hidden>
-            <g stroke="var(--pit-accent)" strokeWidth="1.5" fill="none">
-              <path d="M70 130 L130 90 L250 90 L190 130 Z" />
-              <path d="M70 130 L70 180 L190 180 L190 130" />
-              <path d="M190 130 L250 90 L250 140 L190 180" />
-            </g>
-            <path d="M100 145 L160 145 L160 165 L100 165 Z" stroke="var(--pit-text-2)" strokeWidth="1.5" fill="none" />
-          </svg>
-          <div className="pit-cad-cross-h" />
-          <div className="pit-cad-cross-v" />
-          <span className="file">intake_assembly_v3.step</span>
-        </div>
-        <div className="pit-cad-tree-label">按组件浏览</div>
-        {["底盘", "机械臂", "▶  intake 总成", "射手", "攀爬"].map((c, i) => (
-          <button key={c} type="button" className={`pit-cad-tree-item ${i === 2 ? "active" : ""}`} style={{ top: 83 + i * 40 }}>
-            {c}
-          </button>
-        ))}
-        <div className="pit-cad-slider"><i /></div>
+        <Unconfigured label="CAD 文件未配置" />
       </Panel>
 
       {/* 今日赛程 */}
-      <Panel x={1356} y={728} w={524} h={308} title="今日赛程" en="SCHEDULE · OFFICIAL API">
-        {SCHEDULE.map((s, i) => (
-          <div key={s.m} className={`pit-sch-row ${s.current ? "current" : ""}`} style={{ top: 59 + i * 48 }}>
-            <span className="m" style={{ color: s.current ? "var(--pit-accent)" : "var(--pit-text)" }}>{s.m}</span>
-            <span className="t">{s.t}</span>
-            <span className="p" style={{ color: s.kind === "red" ? "var(--pit-err)" : s.kind === "blue" ? "var(--pit-blue)" : "var(--pit-text-2)" }}>
-              {s.pos}
-            </span>
-            {s.current ? <span className="tag">◀ 即将上场</span> : null}
-          </div>
-        ))}
+      <Panel x={1356} y={728} w={524} h={308} title="今日赛程" en="SCHEDULE">
+        <Unconfigured label="赛事 API 未配置" />
       </Panel>
 
       {/* 底部 LIVE 滚动条 */}
       <div className="pit-ticker">
-        <span className="live"><i>●</i> LIVE  Q-38  RED 128 — 121 BLUE</span>
+        <span className="live">赛事比分未配置</span>
         <span className="ai">
           {state?.scanLog[0]
             ? `│  最近扫码：${state.scanLog[0].msg}  │  API ${live ? "在线" : "离线"} · MQTT ${brokerOnline ? "在线" : "离线"}`
@@ -368,31 +277,18 @@ export function PitClient() {
       </div>
 
       {/* 工具定位全屏覆盖层 */}
-      {locating ? <LocateOverlay tool={locating} tools={tools} onClose={() => setLocating(null)} /> : null}
+      {locating ? <LocateOverlay tool={locating} tools={tools} units={units} scanLog={state?.scanLog ?? []} onClose={() => setLocating(null)} /> : null}
     </div>
   );
 }
 
-function LocateOverlay({ tool, tools, onClose }: { tool: PitTool; tools: PitTool[]; onClose: () => void }) {
-  const targetUnit = tool.slot.split("-")[0];
-  const unitNames: Record<string, { name: string; note: string }> = {
-    U1: { name: "手动工具抽屉", note: "内六角 / 扳手 / 钳" },
-    U2: { name: "电动工具抽屉", note: "电螺丝刀 / 热风枪" },
-    U3: { name: "批头 · 钻头耗材", note: "PH / TX / 内六角批头" },
-    U4: { name: "螺丝螺母格柜", note: "M3 / M4 / M5 / 垫片" },
-    U5: { name: "接头 · 线材", note: "Anderson / XT60 / 线" },
-    U6: { name: "扎带 · 耗材", note: "扎带 / 热缩管 / 胶带" },
-    U7: { name: "电工仪表", note: "万用表 / 夹表" },
-    U8: { name: "维修临时托盘", note: "按工序分组收纳" },
-  };
+function Unconfigured({ label }: { label: string }) {
+  return <div style={{ position: "absolute", inset: "58px 24px 24px", display: "grid", placeItems: "center", color: "var(--pit-text-2)", fontSize: 14 }}>{label}</div>;
+}
 
-  const slots = tools.filter((t) => t.slot.startsWith(targetUnit)).slice(0, 6);
-  const slotCells: Array<{ code: string; name: string; state?: ToolState }> = [];
-  for (let i = 1; i <= 6; i++) {
-    const code = `${targetUnit}-0${i}`;
-    const found = slots.find((s) => s.slot === code);
-    slotCells.push({ code, name: found?.name ?? "", state: found?.state });
-  }
+function LocateOverlay({ tool, tools, units, scanLog, onClose }: { tool: PitTool; tools: PitTool[]; units: RackUnit[]; scanLog: PitState["scanLog"]; onClose: () => void }) {
+  const targetUnit = tool.slot.split("-")[0];
+  const slotCells = tools.filter((item) => item.unit === targetUnit);
 
   return (
     <div className="pit-locate" role="dialog" aria-modal="true" aria-label={`正在定位 ${tool.name}`}>
@@ -407,12 +303,12 @@ function LocateOverlay({ tool, tools, onClose }: { tool: PitTool; tools: PitTool
       <div className="pit-rack-label">16U RACK · FRONT VIEW</div>
       <div className="pit-rack-rail" style={{ left: 66 }} />
       <div className="pit-rack-rail" style={{ left: 1028 }} />
-      {Object.entries(unitNames).map(([u, meta], i) => (
-        <div key={u} className={`pit-rack-unit ${u === targetUnit ? "target" : ""}`} style={{ top: 160 + i * 104 }}>
-          <span className="u">{u}</span>
-          <span className="nm">{meta.name}</span>
-          <span className="note">{meta.note}</span>
-          {u === targetUnit ? <span className="here"><i>◉</i> 这个单元</span> : null}
+      {units.map((unit, i) => (
+        <div key={unit.u} className={`pit-rack-unit ${unit.u === targetUnit ? "target" : ""}`} style={{ top: 160 + i * 104 }}>
+          <span className="u">{unit.u}</span>
+          <span className="nm">{unit.name || "未配置"}</span>
+          <span className="note">{unit.note || "单元信息未配置"}</span>
+          {unit.u === targetUnit ? <span className="here"><i>◉</i> 这个单元</span> : null}
           <span className="handle" />
         </div>
       ))}
@@ -420,24 +316,18 @@ function LocateOverlay({ tool, tools, onClose }: { tool: PitTool; tools: PitTool
       <div className="pit-locate-detail">
         <h3>{targetUnit} 单元内部 · 工具位</h3>
         {slotCells.map((c, i) => {
-          const isTarget = c.code === tool.slot;
+          const isTarget = c.slot === tool.slot;
           return (
             <div
-              key={c.code}
-              className={`pit-slot ${c.name ? "" : "empty"} ${isTarget ? "target" : ""}`}
+              key={c.slot}
+              className={`pit-slot ${isTarget ? "target" : ""}`}
               style={{ left: 20 + (i % 3) * 236, top: 56 + Math.floor(i / 3) * 150 }}
             >
-              <span className="code">{c.code}</span>
-              {c.name ? (
-                <>
-                  <span className="nm">{c.name}</span>
-                  <span className="st" style={isTarget ? undefined : { color: "var(--pit-ok)" }}>
-                    {isTarget ? <><i>◉</i> 在这里！</> : c.state === "out" ? "借出" : "在位"}
-                  </span>
-                </>
-              ) : (
-                <span className="em">空格</span>
-              )}
+              <span className="code">{c.slot}</span>
+              <span className="nm">{c.name}</span>
+              <span className="st" style={isTarget ? undefined : { color: "var(--pit-ok)" }}>
+                {isTarget ? <><i>◉</i> 在这里！</> : c.state === "out" ? "借出" : c.state === "lost" ? "未归还" : "在位"}
+              </span>
             </div>
           );
         })}
@@ -445,12 +335,13 @@ function LocateOverlay({ tool, tools, onClose }: { tool: PitTool; tools: PitTool
 
       <div className="pit-rfid-log">
         <h3>视觉识别记录</h3>
-        {RFID_LOG.map((l, i) => (
+        {scanLog.slice(0, 4).map((l, i) => (
           <div key={l.t + l.msg} className="pit-rfid-row" style={{ top: 56 + i * 34 }}>
             <time>{l.t}</time>
-            <span style={{ color: l.color }}>{l.msg}</span>
+            <span style={{ color: l.kind === "err" ? "var(--pit-err)" : l.kind === "warn" ? "var(--pit-warn)" : "var(--pit-ok)" }}>{l.msg}</span>
           </div>
         ))}
+        {scanLog.length === 0 ? <div style={{ position: "absolute", left: 24, top: 70, color: "var(--pit-text-2)" }}>暂无视觉识别记录</div> : null}
         <div className="pit-rfid-tip">归还时摄像头扫码识别二维码标签，自动重新绑定位置</div>
       </div>
     </div>

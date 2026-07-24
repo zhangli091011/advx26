@@ -49,20 +49,14 @@ try {
     runtime[devId] = {
       lastSeen: now,
       latencyMs: prev ? Math.min(99, Math.max(1, Math.round((now - prev.lastSeen) / 1))) : 1,
-      // TalonFX 温度在特定帧的数据段，此处简化为周期上报；真实按协议解析
-      tempC: parseTemp(msg),
+      // 未接入厂商状态帧解析前不报告温度。
+      tempC: null,
     };
   });
   channel.start();
   console.log(`[can-bridge] SocketCAN ${CAN_IFACE} 已启动`);
 } catch (err) {
   console.warn("[can-bridge] SocketCAN 不可用（非树莓派/未插适配器），仅发布空状态。", err.message);
-}
-
-// 从 CAN 帧数据段解析温度（占位实现，按实际设备协议调整）
-function parseTemp(msg) {
-  if (!msg.data || msg.data.length < 2) return null;
-  return msg.data[0]; // 示例：假设温度在 data[0]
 }
 
 setInterval(() => {

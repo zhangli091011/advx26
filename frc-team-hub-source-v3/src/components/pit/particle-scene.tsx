@@ -116,6 +116,8 @@ function ParticleModel({ data, assemble }: { data: PointCloudData; assemble: num
     return { geometry: g, uniforms: u };
   }, [data]);
 
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
   useFrame((state, delta) => {
     const material = materialRef.current;
     if (!material) return;

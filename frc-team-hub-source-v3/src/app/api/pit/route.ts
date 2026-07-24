@@ -1,13 +1,12 @@
 import { apiError, apiSuccess, isSameOrigin } from "@/lib/api";
 import { isRecentlySeen, parsePitControl } from "@/lib/pit-control";
 import { getPitHub } from "@/lib/pit-hub";
-import { getPitState } from "@/lib/pit-seed";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  return apiSuccess(getPitState());
+  return apiSuccess(getPitHub().state);
 }
 
 /** 下行控制：电源开关 / 指示灯寻物 */
@@ -31,23 +30,36 @@ export async function POST(request: Request) {
   });
   if ("error" in parsed) return apiError(parsed.error, 400);
 
-  if (!hub.state.connection.brokerConnected) {
-    return apiError("MQTT Broker 未连接，指令未发送", 503);
-  }
-
   const { action, target } = parsed.command;
   let sent = false;
   if (action === "power") {
+    if (hub.hasMiotChannel(target)) {
+      try {
+        const transport = await hub.setMiotPower(target, parsed.command.on);
+        return apiSuccess({ sent: true, transport });
+      } catch (error) {
+        return apiError(error instanceof Error ? error.message : "米家插座控制失败", 503);
+      }
+    }
+    if (!hub.state.connection.brokerConnected) {
+      return apiError("MQTT Broker 未连接，指令未发送", 503);
+    }
     if (!isRecentlySeen(hub.state.connection.deviceLastSeen.power)) {
       return apiError("电源分控离线或数据已过期，禁止远程控制", 503);
     }
     sent = await hub.publishControl(`power/${target}`, { on: parsed.command.on });
   } else if (action === "locate") {
+    if (!hub.state.connection.brokerConnected) {
+      return apiError("MQTT Broker 未连接，指令未发送", 503);
+    }
     if (!isRecentlySeen(hub.state.connection.deviceLastSeen.cabinet)) {
       return apiError("储物柜分控离线或数据已过期，指令未发送", 503);
     }
     sent = await hub.publishControl(`locate/${target}`, { blink: true });
   } else if (action === "locate-unit") {
+    if (!hub.state.connection.brokerConnected) {
+      return apiError("MQTT Broker 未连接，指令未发送", 503);
+    }
     if (!isRecentlySeen(hub.state.connection.deviceLastSeen.cabinet)) {
       return apiError("储物柜分控离线或数据已过期，指令未发送", 503);
     }
