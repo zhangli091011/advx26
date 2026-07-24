@@ -4,11 +4,11 @@ import mqtt from "mqtt";
 import { EventEmitter } from "node:events";
 import { MiotOutletManager } from "@/lib/miot-outlets";
 import { loadPitConfigFallback } from "@/lib/pit-config";
+import { ToolManager } from "@/lib/tool-manager";
 import type {
   Battery,
   Compartment,
   PitState,
-  PitTool,
   PowerChannel,
   RackUnit,
 } from "@/types/pit";
@@ -40,7 +40,7 @@ function emptyState(): PitState {
     connection: {
       brokerConnected: false,
       lastMessageAt: null,
-      deviceLastSeen: { cabinet: null, power: null, miot: null, can: null, vision: null },
+      deviceLastSeen: { cabinet: null, power: null, miot: null, can: null, vision: null, toolbox: null },
     },
     tools: [],
     units: [],
@@ -50,6 +50,14 @@ function emptyState(): PitState {
     canDevices: [],
     env: { tempC: null, humidity: null },
     scanLog: [],
+    toolStation: {
+      activeSession: null,
+      checkoutCount: 0,
+      returnCount: 0,
+      desiredRevision: 0,
+      appliedRevision: null,
+      recentTransactions: [],
+    },
   };
 }
 
@@ -62,11 +70,13 @@ class PitHub extends EventEmitter {
   state: PitState = emptyState();
   private client: mqtt.MqttClient | null = null;
   private miot: MiotOutletManager | null = null;
+  private tools = new ToolManager();
   private started = false;
 
   start() {
     if (this.started) return;
     this.started = true;
+    this.refreshTools();
     const config = loadPitConfigFallback();
     try {
       this.miot = new MiotOutletManager(config.miot);
@@ -98,7 +108,9 @@ class PitHub extends EventEmitter {
           "pit/esp32-b/#",
           "pit/can/#",
           "pit/vision/#",
+          "pit/toolbox/#",
         ], { qos: 1 });
+        void this.publishToolLeds();
         this.emit("update", this.state);
       });
       this.client.on("close", () => {
@@ -119,14 +131,17 @@ class PitHub extends EventEmitter {
     if (payload.length > 64 * 1024) return;
     const parts = topic.split("/");
     const source = parts[1];
-    if (!source || !["esp32-a", "esp32-b", "can", "vision"].includes(source)) return;
+    if (!source || !["esp32-a", "esp32-b", "can", "vision", "toolbox"].includes(source)) return;
 
     const now = Date.now();
     if (parts[2] === "status") {
       const seenAt = payload.toString().trim() === "online" ? now : null;
       if (source === "esp32-a") this.state.connection.deviceLastSeen.cabinet = seenAt;
       else if (source === "esp32-b") this.state.connection.deviceLastSeen.power = seenAt;
+      else if (source === "vision") this.state.connection.deviceLastSeen.vision = seenAt;
+      else if (source === "toolbox") this.state.connection.deviceLastSeen.toolbox = seenAt;
       this.markUpdated(now);
+      if (source === "toolbox" && seenAt) void this.publishToolLeds();
       return;
     }
 
@@ -139,11 +154,13 @@ class PitHub extends EventEmitter {
     if (source === "esp32-a") this.state.connection.deviceLastSeen.cabinet = now;
     else if (source === "esp32-b") this.state.connection.deviceLastSeen.power = now;
     else if (source === "can") this.state.connection.deviceLastSeen.can = now;
+    else if (source === "toolbox") this.state.connection.deviceLastSeen.toolbox = now;
     else this.state.connection.deviceLastSeen.vision = now;
     let handled = false;
     if (source === "esp32-a") handled = this.handleCabinet(parts, data);
     else if (source === "esp32-b") handled = this.handlePower(parts, data);
     else if (source === "can") handled = this.handleCan(parts, data);
+    else if (source === "toolbox") handled = this.handleToolbox(parts, data);
     else handled = this.handleVision(parts, data);
     if (handled) this.markUpdated(now);
   }
@@ -160,22 +177,8 @@ class PitHub extends EventEmitter {
     const d = asRecord(data);
     if (!d) return false;
     if (parts[2] === "tools" && parts[3]) {
-      const state = oneOf(d.state, ["in", "out", "lost"] as const);
-      if (!state) return false;
-      const slot = parts[3];
-      const idx = this.state.tools.findIndex((t) => t.slot === slot);
-      const tool: PitTool = {
-        slot,
-        name: String(d.name ?? slot),
-        unit: String(d.unit ?? slot.split("-")[0]),
-        state,
-        who: optionalText(d.who),
-        time: optionalText(d.time),
-        qr: optionalText(d.qr),
-      };
-      if (idx >= 0) this.state.tools[idx] = tool;
-      else this.state.tools.push(tool);
-      this.state.tools.sort((a, b) => a.slot.localeCompare(b.slot));
+      // Tool state is owned by ToolManager; ESP32 only applies LED snapshots.
+      return false;
     } else if (parts[2] === "units" && parts[3]) {
       const level = oneOf(d.level, ["ok", "low", "active"] as const);
       const pct = finiteNumber(d.pct, 0, 100);
@@ -208,6 +211,15 @@ class PitHub extends EventEmitter {
       if (idx >= 0) this.state.compartments[idx] = comp;
       else this.state.compartments.push(comp);
     } else return false;
+    return true;
+  }
+
+  private handleToolbox(parts: string[], data: unknown) {
+    if (parts[2] !== "tool-leds" || parts[3] !== "status") return false;
+    const d = asRecord(data);
+    const revision = d ? finiteNumber(d.revision, 0, Number.MAX_SAFE_INTEGER) : null;
+    if (revision === null || d?.applied !== true) return false;
+    this.state.toolStation.appliedRevision = revision;
     return true;
   }
 
@@ -287,19 +299,87 @@ class PitHub extends EventEmitter {
   }
 
   /* 视觉识别扫码事件 */
-  private handleVision(_parts: string[], data: unknown) {
+  private handleVision(parts: string[], data: unknown) {
+    if (parts[2] !== "scan") return false;
     const d = asRecord(data);
     if (!d) return false;
+    if (typeof d.scanId === "string" && typeof d.qr === "string") {
+      try {
+        const result = this.tools.consumeScan(d.scanId, d.qr, d.stationId, d.capturedAt);
+        if (result.duplicate) return false;
+        this.refreshTools();
+        this.addScanLog(
+          `${result.operation === "checkout" ? "借出" : "归还"}「${result.slot.name}」· ${result.slot.slot}`,
+          "ok",
+        );
+        void this.publishToolLeds();
+      } catch (error) {
+        this.refreshTools();
+        this.addScanLog(error instanceof Error ? error.message : "扫码处理失败", "err");
+      }
+      return true;
+    }
     const kind = oneOf(d.kind, ["ok", "warn", "err"] as const);
     if (!kind || typeof d.msg !== "string") return false;
-    const entry = {
-      t: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-      msg: d.msg.slice(0, 500),
-      kind,
-    };
-    this.state.scanLog.unshift(entry);
-    this.state.scanLog = this.state.scanLog.slice(0, 20);
+    this.addScanLog(d.msg, kind);
     return true;
+  }
+
+  private addScanLog(msg: string, kind: "ok" | "warn" | "err") {
+    this.state.scanLog.unshift({
+      t: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+      msg: msg.slice(0, 500),
+      kind,
+    });
+    this.state.scanLog = this.state.scanLog.slice(0, 20);
+  }
+
+  private refreshTools() {
+    const appliedRevision = this.state.toolStation.appliedRevision;
+    this.state.tools = this.tools.tools;
+    this.state.toolStation = { ...this.tools.station, appliedRevision };
+  }
+
+  private publishToolLeds(): Promise<boolean> {
+    if (!this.client?.connected) return Promise.resolve(false);
+    return new Promise((resolve) => {
+      this.client?.publish(
+        "pit/control/toolbox/tool-leds",
+        JSON.stringify(this.tools.ledSnapshot()),
+        { qos: 1, retain: true },
+        (error) => resolve(!error),
+      );
+    });
+  }
+
+  getToolAdminState() {
+    this.refreshTools();
+    return { slots: this.tools.slots, station: this.state.toolStation };
+  }
+
+  configureTool(input: unknown) {
+    const result = this.tools.configure(input);
+    this.refreshTools();
+    this.markUpdated(Date.now());
+    void this.publishToolLeds();
+    return result;
+  }
+
+  startToolSession(operation: unknown) {
+    const result = this.tools.startSession(operation);
+    this.refreshTools();
+    this.markUpdated(Date.now());
+    return result;
+  }
+
+  cancelToolSession() {
+    this.tools.cancelSession();
+    this.refreshTools();
+    this.markUpdated(Date.now());
+  }
+
+  syncToolLeds() {
+    return this.publishToolLeds();
   }
 
   /** 下行控制：发布 MQTT 指令给分控 */
@@ -328,10 +408,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asRecord(value: unknown) {
   return isRecord(value) ? value : null;
-}
-
-function optionalText(value: unknown) {
-  return typeof value === "string" ? value.slice(0, 200) : undefined;
 }
 
 function finiteNumber(value: unknown, min: number, max: number) {

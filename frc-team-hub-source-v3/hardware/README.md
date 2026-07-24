@@ -140,17 +140,64 @@ sudo systemctl enable --now pit-os
 
 软件保护不能代替保险丝、接触器和急停。当前固件实现每路 `>16A` 断电及箱内 `>60°C` 全通道断电；赛前自动上电和离场模式尚未实现。
 
+### 3.1 两颗普通 LED 测试模式
+
+固件：`firmware/esp32-toolbox-10led/esp32-toolbox-10led.ino`
+
+当前固件保持系统 10 工具位协议，但只驱动前两颗普通单色 LED，便于先完成台架测试：
+
+| 灯位 | 工具位 | ESP32 GPIO |
+|---:|---|---:|
+| 1 | U1-01 | 13 |
+| 2 | U1-02 | 14 |
+
+每路接线：`GPIO → 330Ω 电阻 → LED 正极`，LED 负极接 GND。建议每颗控制在 3–5mA；如果灯珠工作电流更大，应增加三极管、MOSFET 或 PCA9685 驱动，不能由 ESP32 GPIO 直接供电。
+
+两灯完整接线：
+
+```text
+GPIO13 → 330Ω → LED1 长脚（正极）
+LED1 短脚（负极）→ GND
+
+GPIO14 → 330Ω → LED2 长脚（正极）
+LED2 短脚（负极）→ GND
+```
+
+ESP32 通过 USB 供电即可，不要把 LED 正极接 5V。两颗 LED 可以共用 GND，但必须各自使用一个 330Ω 电阻。
+
+Arduino 库：
+
+```text
+PubSubClient
+ArduinoJson
+```
+
+灯态：未配置熄灭，在位常亮，借出慢闪，遗失快闪，定位快闪 15 秒。客户端只配置 `U1-01` 和 `U1-02`，其余 8 位保持停用。
+
+上电自检顺序：LED1 点亮 0.5 秒、LED2 点亮 0.5 秒、两灯同时点亮 0.7 秒、全部熄灭。自检无需 Wi-Fi 或 MQTT；如果自检不正确，应先检查极性、电阻和 GND。
+
+客户端测试配置：
+
+```text
+U1-01：启用，工具名称=测试工具1，二维码=TOOL-U1-01
+U1-02：启用，工具名称=测试工具2，二维码=TOOL-U1-02
+U1-03 至 U1-10：停用
+```
+
+测试步骤：先点击“同步 LED”，在位状态应两灯常亮；分别点击工具的“定位”，对应灯应快闪 15 秒；点击“借出”并扫描对应二维码后，该灯慢闪；点击“归还”并再次扫描后恢复常亮。
+
+测试通过后扩展到 10 颗时，将固件中的 `PHYSICAL_LED_COUNT` 改为 `10`，并把 `LED_PINS` 恢复为 `{13,14,16,17,18,19,21,22,23,25}`。
+
 ---
 
 ## 5. 视觉识别二维码（工具入库）
 
 替代 RFID：每件工具贴 **10×10mm 二维码贴纸**（内容 = 工具 ID，如 `TOOL-U1-03`）。
 
-- 借还工位固定一个 **USB 摄像头**（罗技 C270 或 ESP32-CAM 模块）对准托盘；
-- 树莓派跑 `vision-scan` 服务（Python + OpenCV + pyzbar），识别后：
-  - 借出：该工具状态 → `out`，记录借出人（触摸屏确认）；
-  - 归还：识别二维码 → 任意空位放入 → 该格称重变化 → 自动绑定新位号；
-- 事件发布到 `pit/vision/scan`，前端借还工位实时显示。
+- 借还工位固定一个 USB 摄像头；
+- 在客户端先选择“借出”或“归还”，再扫描二维码；
+- `vision-scan` 只发布原始扫码事件，不自行翻转工具状态；
+- 主控将状态持久化到 `PIT_CONFIG_DIR/pit-tools.json`，成功后自动同步 10 个 LED。
 
 ```bash
 sudo apt install -y python3-opencv python3-pip libzbar0
@@ -180,19 +227,23 @@ pip3 install pyzbar paho-mqtt
 | `pit/esp32-b/battery/{id}` | `{pct,charging,volts}` | ESP32-B |
 | `pit/esp32-b/env` | `{tempC,humidity}` | ESP32-B |
 | `pit/can/devices` | `[{id,name,model,mech,on,latencyMs,tempC,lastHeartbeat}]` | can-bridge |
-| `pit/vision/scan` | `{msg,kind}` | vision-scan |
+| `pit/vision/scan` | `{scanId,qr,stationId,capturedAt}`，非 retained | vision-scan |
+| `pit/toolbox/status` | `online` / `offline` | 10 LED 控制器独立在线状态 |
+| `pit/toolbox/tool-leds/status` | `{revision,applied}` | 10 LED 控制器 |
 
 | Topic（下行 → 分控） | 载荷 | 用途 |
 |---|---|---|
 | `pit/control/power/{ch}` | `{on}` | 继电器开关 |
 | `pit/control/locate/{slot}` | `{blink:true}` | 格位 LED 闪烁寻物 |
 | `pit/control/locate-unit/{unit}` | `{blink:true}` | 整单元 LED 提示 |
+| `pit/control/toolbox/tool-leds` | `{revision,slots:[{ledIndex,slot,state}]}`，retained | 10 LED 完整状态快照 |
 
 ---
 
 ## 8. 分控固件
 
 - `firmware/esp32-a-cabinet/` — 储存柜分控（HX711 ×8 + WS2812 ×64 + 门磁 ×8 + MQTT）
+- `firmware/esp32-toolbox-10led/` — 当前为两颗普通 LED 台架测试固件，协议兼容后续 10 位扩展
 - `firmware/esp32-b-power/` — 配电箱分控（继电器 ×8 + ACS712 ×8 + 电池电压 ×4 + DS18B20 + MQTT）
 - `scripts/vision-scan.py` — 视觉扫码服务（OpenCV + pyzbar + MQTT）
 - `scripts/can-bridge.js` — CAN 转 MQTT 桥（SocketCAN + node-can）

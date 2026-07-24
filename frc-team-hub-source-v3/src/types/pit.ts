@@ -10,6 +10,32 @@ export interface PitTool {
   qr?: string;
 }
 
+export type ToolOperation = "checkout" | "return";
+
+export interface ToolSession {
+  id: string;
+  operation: ToolOperation;
+  createdAt: number;
+  expiresAt: number;
+}
+
+export interface ToolTransaction {
+  id: string;
+  slot: string;
+  name: string;
+  operation: ToolOperation;
+  createdAt: number;
+}
+
+export interface ToolStationState {
+  activeSession: ToolSession | null;
+  checkoutCount: number;
+  returnCount: number;
+  desiredRevision: number;
+  appliedRevision: number | null;
+  recentTransactions: ToolTransaction[];
+}
+
 export interface RackUnit {
   u: string;
   name: string;
@@ -68,6 +94,7 @@ export interface PitConnection {
     miot: number | null;
     can: number | null;
     vision: number | null;
+    toolbox: number | null;
   };
 }
 
@@ -83,4 +110,5 @@ export interface PitState {
   canDevices: CanDevice[];
   env: { tempC: number | null; humidity: number | null };
   scanLog: Array<{ t: string; msg: string; kind: "ok" | "warn" | "err" }>;
+  toolStation: ToolStationState;
 }
