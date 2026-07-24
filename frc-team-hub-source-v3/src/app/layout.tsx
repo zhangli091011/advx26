@@ -3,10 +3,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "NEXUS // FRC 赛队工作台",
-    template: "%s · NEXUS",
+    default: "PIT-OS // 智能工具箱",
+    template: "%s · PIT-OS",
   },
-  description: "FRC 赛队打卡、图纸与财务资料的一体化工作台",
+  description: "FRC 维修区智能工具箱：工具/零件定位、CAN 监控、电源控制、赛事信息",
 };
 
 export default function RootLayout({

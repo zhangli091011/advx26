@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["better-sqlite3", "sharp", "mqtt"],
+  serverExternalPackages: ["mqtt"],
   turbopack: {
     root: process.cwd(),
   },
