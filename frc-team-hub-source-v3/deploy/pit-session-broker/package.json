@@ -1,9 +1,0 @@
-{
-  "name": "pit-session-broker",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "homebridge-miot": "1.9.0"
-  }
-}

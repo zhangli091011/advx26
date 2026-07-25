@@ -1,26 +1,54 @@
-# ---- 依赖与构建 ----
-node_modules/
-.next/
-out/
-build/
+# Dependencies and package-manager state
+/node_modules/
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build, test, and packaging output
+/.next/
+/out/
+/build/
+/coverage/
+/desktop/
+/dist-desktop/
 *.tsbuildinfo
 next-env.d.ts
 
-# ---- 环境变量与密钥 ----
-.env
-.env.local
-.env*.local
+# Runtime data and protected uploads
+/data/
 
-# ---- 运行时数据（SQLite / 上传文件）----
-frc-team-hub-source-v3/data/
+# Local configuration and credentials
+.env*
+!.env.example
+*.pem
 
-# ---- 临时与压缩包 ----
+# Logs and temporary artifacts
+*.log
+*.tmp
+*.bak
+*.swp
+*.py[cod]
 *.zip
+*.tar.gz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 .figma-review/
 figma-v2-previews/
 figma-v3-previews/
 kimi-debug-session_*/
+__pycache__/
+.pytest_cache/
+.eslintcache
 
-# ---- 系统文件 ----
+# Editors, operating systems, and hosting tools
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
+.vercel/
