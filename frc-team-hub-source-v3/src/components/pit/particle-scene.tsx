@@ -4,7 +4,9 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import type { PointCloudData } from "./step-points";
+import type { PointCloudData } from "./point-cloud";
+
+const IS_PI = process.env.NEXT_PUBLIC_PIT_DEVICE_PROFILE === "pi5";
 
 /**
  * 终末地风格粒子 3D：
@@ -197,6 +199,23 @@ function CameraReset({ trigger }: { trigger: number }) {
   return null;
 }
 
+function PiFrameDriver() {
+  const { invalidate } = useThree();
+  useEffect(() => {
+    const render = () => {
+      if (!document.hidden) invalidate();
+    };
+    render();
+    const timer = window.setInterval(render, 1000 / 30);
+    document.addEventListener("visibilitychange", render);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", render);
+    };
+  }, [invalidate]);
+  return null;
+}
+
 export default function ParticleScene({
   data,
   assemble = 1,
@@ -211,9 +230,12 @@ export default function ParticleScene({
   return (
     <Canvas
       camera={{ position: [0, 0.6, 2.6], fov: 42 }}
-      gl={{ antialias: true, alpha: true }}
+      dpr={IS_PI ? 1 : [1, 2]}
+      frameloop={IS_PI ? "demand" : "always"}
+      gl={{ antialias: !IS_PI, alpha: true, powerPreference: "high-performance" }}
       style={{ background: "transparent" }}
     >
+      {IS_PI ? <PiFrameDriver /> : null}
       <ParticleModel data={data} assemble={assemble} replay={replay} />
       <BaseGrid />
       <CameraReset trigger={viewReset} />

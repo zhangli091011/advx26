@@ -2,7 +2,7 @@
 
 > 主控：**树莓派 5**（主工作台 22" 触摸屏）
 > 分控：**ESP32-A**（16U 储存柜）、**ESP32-B**（电源配电箱）
-> 通信：**MQTT over WiFi**（树莓派跑 Mosquitto Broker）
+> 通信：**WebSocket 长连接 over WiFi**（树莓派运行认证设备网关）
 > 机器人 CAN：**USB-CAN 适配器 + TunerX**（SocketCAN）
 > 工具识别：**视觉识别二维码标签**（不用 RFID）
 
@@ -16,13 +16,13 @@
                     │  ┌──────────────────────────────┐  │
    22" 触摸屏 ◄────►│  │  Next.js (PIT-OS UI + API)   │  │
    (HDMI + USB 触摸) │  ├──────────────────────────────┤  │
-                    │  │  Mosquitto MQTT Broker :1883 │  │
+                    │  │  WebSocket Device Gateway   │  │
                     │  ├──────────────────────────────┤  │
                     │  │  can-bridge 服务 (SocketCAN)  │  │
                     │  └──────────────────────────────┘  │
                     │   USB-CAN 适配器 ──► 机器人 CAN 总线 │
                     └───────┬──────────────┬─────────────┘
-                            │ MQTT/WiFi    │ MQTT/WiFi
+                             │ WebSocket    │ WebSocket
               ┌─────────────▼───┐      ┌───▼──────────────┐
               │  ESP32-A 储存柜  │      │  ESP32-B 配电箱   │
               │  · 称重×8        │      │  · 8路继电器       │
@@ -50,22 +50,10 @@
 
 ```bash
 # 1) 系统依赖
-sudo apt update && sudo apt install -y mosquitto mosquitto-clients \
-  can-utils nodejs npm git
+sudo apt update && sudo apt install -y can-utils nodejs npm git
 
-# 2) MQTT Broker 账号和最小 Topic 权限
-sudo mosquitto_passwd -c /etc/mosquitto/passwd pit-device
-sudo tee /etc/mosquitto/acl <<'EOF'
-user pit-device
-topic readwrite pit/#
-EOF
-sudo tee /etc/mosquitto/conf.d/pit.conf <<'EOF'
-listener 1883 0.0.0.0
-allow_anonymous false
-password_file /etc/mosquitto/passwd
-acl_file /etc/mosquitto/acl
-EOF
-sudo systemctl enable --now mosquitto
+# 2) 使用 deploy/pi/install.sh 安装认证设备网关、Next.js 和 kiosk
+# 网关监听 8765，token 自动写入 /etc/pit-os/gateway.env
 
 # 3) CAN 接口（SocketCAN，USB-CAN 适配器）
 sudo ip link set can0 up type can bitrate 1000000
@@ -75,19 +63,18 @@ ip -details link show can0   # 确认 UP
 # 4) 项目
 git clone <repo> frc-team-hub && cd frc-team-hub
 npm ci && npm run build
-PIT_MQTT_URL=mqtt://127.0.0.1:1883 \
-PIT_MQTT_USERNAME=pit-device PIT_MQTT_PASSWORD='<部署密码>' npm run start -- --port 3000
+PIT_GATEWAY_URL=ws://127.0.0.1:8765 \
+PIT_GATEWAY_TOKEN='<与 /etc/pit-os/gateway.env 一致>' npm run start -- --port 3000
 
 # 5) 开机自启（systemd）
 sudo tee /etc/systemd/system/pit-os.service <<'EOF'
 [Unit]
 Description=PIT-OS
-After=network.target mosquitto.service
+After=network.target pit-device-gateway.service
 [Service]
 WorkingDirectory=/home/pi/frc-team-hub
-Environment=PIT_MQTT_URL=mqtt://127.0.0.1:1883
-Environment=PIT_MQTT_USERNAME=pit-device
-Environment=PIT_MQTT_PASSWORD=<部署密码>
+Environment=PIT_GATEWAY_URL=ws://127.0.0.1:8765
+EnvironmentFile=/etc/pit-os/gateway.env
 Environment=PIT_CONFIG_DIR=/var/lib/pit-os
 ExecStart=/usr/bin/npm run start -- --port 3000
 Restart=always
@@ -144,6 +131,14 @@ sudo systemctl enable --now pit-os
 
 固件：`firmware/esp32-toolbox-10led/esp32-toolbox-10led.ino`
 
+如果只测试 5 颗灯珠和接线，不连接 Wi-Fi/WebSocket，请先烧录：
+
+```text
+firmware/esp32-5led-test/esp32-5led-test.ino
+```
+
+该测试固件不需要任何第三方库，使用 GPIO13、14、16、17、18。它会逐颗点亮 0.8 秒，再让 5 颗同时点亮 2 秒，最后全部熄灭 1 秒。
+
 当前固件保持系统 10 工具位协议，但只驱动前两颗普通单色 LED，便于先完成台架测试：
 
 | 灯位 | 工具位 | ESP32 GPIO |
@@ -168,13 +163,13 @@ ESP32 通过 USB 供电即可，不要把 LED 正极接 5V。两颗 LED 可以�
 Arduino 库：
 
 ```text
-PubSubClient
+ArduinoWebsockets
 ArduinoJson
 ```
 
 灯态：未配置熄灭，在位常亮，借出慢闪，遗失快闪，定位快闪 15 秒。客户端只配置 `U1-01` 和 `U1-02`，其余 8 位保持停用。
 
-上电自检顺序：LED1 点亮 0.5 秒、LED2 点亮 0.5 秒、两灯同时点亮 0.7 秒、全部熄灭。自检无需 Wi-Fi 或 MQTT；如果自检不正确，应先检查极性、电阻和 GND。
+上电自检顺序：LED1 点亮 0.5 秒、LED2 点亮 0.5 秒、两灯同时点亮 0.7 秒、全部熄灭。自检无需 Wi-Fi 或 WebSocket；如果自检不正确，应先检查极性、电阻和 GND。
 
 客户端测试配置：
 
@@ -192,7 +187,7 @@ U1-03 至 U1-10：停用
 
 ## 5. 视觉识别二维码（工具入库）
 
-替代 RFID：每件工具贴 **10×10mm 二维码贴纸**（内容 = 工具 ID，如 `TOOL-U1-03`）。
+替代 RFID：每件工具贴 **10×10mm 二维码贴纸**（内容 = 工具 ID，如 `TOOL-U1-03`）。扫码相机使用 Orbbec Dabai DC 的 RGB UVC/V4L2 节点，不使用深度流。
 
 - 借还工位固定一个 USB 摄像头；
 - 在客户端先选择“借出”或“归还”，再扫描二维码；
@@ -200,10 +195,24 @@ U1-03 至 U1-10：停用
 - 主控将状态持久化到 `PIT_CONFIG_DIR/pit-tools.json`，成功后自动同步 10 个 LED。
 
 ```bash
-sudo apt install -y python3-opencv python3-pip libzbar0
-pip3 install pyzbar paho-mqtt
-# 运行 scripts/vision-scan.py（见下方固件目录）
+sudo apt install -y python3-opencv python3-pyzbar python3-websocket libzbar0 v4l-utils
+lsusb | grep -i -E '2bc5|orbbec'
+v4l2-ctl --list-devices
+ls -l /dev/v4l/by-id /dev/v4l/by-path
+v4l2-ctl --device=/dev/videoN --list-formats-ext
 ```
+
+找到支持 RGB/MJPEG/YUYV 的彩色节点后，优先使用稳定路径而不是 `/dev/video0`。复制 `systemd/pit-vision-scan.env.example` 到 `/etc/pit-vision-scan.env`，设置 `PIT_CAMERA_DEVICE=/dev/v4l/by-id/...`；再安装并启动服务：
+
+```bash
+sudo install -m 0644 hardware/systemd/pit-vision-scan.service /etc/systemd/system/
+sudo install -m 0600 hardware/systemd/pit-vision-scan.env.example /etc/pit-vision-scan.env
+sudo systemctl daemon-reload
+sudo systemctl enable --now pit-vision-scan
+sudo journalctl -u pit-vision-scan -f
+```
+
+确认 `PIT_TOOL_STATION_ID=main` 与 PIT-OS 环境变量一致。相机只在客户端点击“借出”或“归还”后 60 秒会话内扫码；空闲时二维码不会改变工具状态。USB 断开后服务会标记未就绪并自动重开。
 
 ---
 
@@ -211,12 +220,12 @@ pip3 install pyzbar paho-mqtt
 
 - 适配器：**CTRE CANivore** 或任意 SocketCAN 兼容 USB-CAN（如 CANable/PCAN）；
 - 树莓派通过 SocketCAN 读取 FRC CAN 帧（TalonFX/SparkMax/PDH 心跳与遥测）；
-- `can-bridge` 服务（Node/Python）解析设备 ID → 在线状态 / 延迟 / 温度，发布到 `pit/can/devices`；
+- `can-bridge` 服务解析设备 ID → 在线状态 / 延迟 / 温度，通过长连接发布到 `pit/can/devices`；
 - TunerX 用于现场标定与设备 ID 管理（笔记本 USB 直连时使用，与面板监控互补）。
 
 ---
 
-## 7. MQTT Topic 契约
+## 7. WebSocket 通道契约
 
 | Topic（上行 → 树莓派） | 载荷 | 来源 |
 |---|---|---|
@@ -227,7 +236,8 @@ pip3 install pyzbar paho-mqtt
 | `pit/esp32-b/battery/{id}` | `{pct,charging,volts}` | ESP32-B |
 | `pit/esp32-b/env` | `{tempC,humidity}` | ESP32-B |
 | `pit/can/devices` | `[{id,name,model,mech,on,latencyMs,tempC,lastHeartbeat}]` | can-bridge |
-| `pit/vision/scan` | `{scanId,qr,stationId,capturedAt}`，非 retained | vision-scan |
+| `pit/vision/status/{stationId}` | `{online,ready,device,width,height,error,updatedAt}`，retained | vision-scan |
+| `pit/vision/scan` | `{scanId,sessionId,qr,stationId,capturedAt}`，非 retained | vision-scan |
 | `pit/toolbox/status` | `online` / `offline` | 10 LED 控制器独立在线状态 |
 | `pit/toolbox/tool-leds/status` | `{revision,applied}` | 10 LED 控制器 |
 
@@ -237,13 +247,16 @@ pip3 install pyzbar paho-mqtt
 | `pit/control/locate/{slot}` | `{blink:true}` | 格位 LED 闪烁寻物 |
 | `pit/control/locate-unit/{unit}` | `{blink:true}` | 整单元 LED 提示 |
 | `pit/control/toolbox/tool-leds` | `{revision,slots:[{ledIndex,slot,state}]}`，retained | 10 LED 完整状态快照 |
+| `pit/control/vision/session/{stationId}` | `{sessionId,operation,createdAt,expiresAt}`，retained；完成后清除 | Dabai DC 扫码会话 |
 
 ---
 
 ## 8. 分控固件
 
-- `firmware/esp32-a-cabinet/` — 储存柜分控（HX711 ×8 + WS2812 ×64 + 门磁 ×8 + MQTT）
+- `firmware/esp32-a-cabinet/` — 储存柜分控（HX711 ×8 + WS2812 ×64 + 门磁 ×8 + WebSocket）
 - `firmware/esp32-toolbox-10led/` — 当前为两颗普通 LED 台架测试固件，协议兼容后续 10 位扩展
-- `firmware/esp32-b-power/` — 配电箱分控（继电器 ×8 + ACS712 ×8 + 电池电压 ×4 + DS18B20 + MQTT）
-- `scripts/vision-scan.py` — 视觉扫码服务（OpenCV + pyzbar + MQTT）
-- `scripts/can-bridge.js` — CAN 转 MQTT 桥（SocketCAN + node-can）
+- `firmware/esp32-b-power/` — 配电箱分控（继电器 ×8 + ACS712 ×8 + 电池电压 ×4 + DS18B20 + WebSocket）
+- `scripts/vision-scan.py` — 视觉扫码服务（OpenCV + pyzbar + WebSocket）
+- `scripts/can-bridge.js` — CAN 转 WebSocket 桥（SocketCAN + node-can）
+
+ESP32 固件依赖 `ArduinoWebsockets` 和 `ArduinoJson`。烧录前将 `GATEWAY_URL` 指向树莓派 `8765`，并将 `GATEWAY_TOKEN` 设置为 `/etc/pit-os/gateway.env` 中的 token。

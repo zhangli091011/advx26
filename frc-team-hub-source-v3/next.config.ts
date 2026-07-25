@@ -2,7 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["mqtt"],
+  images: {
+    unoptimized: true,
+  },
+  outputFileTracingExcludes: {
+    "/*": ["./data/**/*", "./.env*"],
+  },
   turbopack: {
     root: process.cwd(),
   },

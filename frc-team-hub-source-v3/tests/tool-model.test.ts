@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createEmptyToolStore, nextToolState, parseToolOperation, parseToolSlotInput, parseToolStore } from "../src/lib/tool-model";
+import { createEmptyToolStore, nextToolState, parseToolOperation, parseToolSlotInput, parseToolStore, parseVisionScan } from "../src/lib/tool-model";
 
 test("creates exactly ten stable LED slots", () => {
   const store = createEmptyToolStore();
@@ -38,4 +38,11 @@ test("validates the complete persisted tool store", () => {
   assert.throws(() => parseToolStore({ ...store, revision: "1" }), /结构无效/);
   assert.throws(() => parseToolStore({ ...store, slots: store.slots.map((slot, index) => index === 0 ? { ...slot, ledIndex: 9 } : slot) }), /顺序无效/);
   assert.throws(() => parseToolStore({ ...store, transactions: null }), /事务记录无效/);
+});
+
+test("requires exact session correlation in vision scan payloads", () => {
+  assert.deepEqual(parseVisionScan({ scanId: "scan-1", sessionId: "session-1", qr: "TOOL-1", stationId: "main", capturedAt: 123 }), {
+    scanId: "scan-1", sessionId: "session-1", qr: "TOOL-1", stationId: "main", capturedAt: 123,
+  });
+  assert.throws(() => parseVisionScan({ scanId: "scan-1", qr: "TOOL-1", stationId: "main", capturedAt: 123 }), /sessionId/);
 });

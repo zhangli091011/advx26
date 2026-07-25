@@ -34,6 +34,17 @@ export interface ToolStationState {
   desiredRevision: number;
   appliedRevision: number | null;
   recentTransactions: ToolTransaction[];
+  vision: {
+    stationId: string;
+    online: boolean;
+    ready: boolean;
+    backend: string;
+    device: string;
+    width: number | null;
+    height: number | null;
+    error: string | null;
+    updatedAt: number | null;
+  };
 }
 
 export interface RackUnit {
@@ -60,7 +71,7 @@ export interface PowerChannel {
   amps: number | null;
   watts: number | null;
   on: boolean;
-  provider: "mqtt" | "home-assistant";
+  provider: "gateway" | "home-assistant";
   transport: "rest" | null;
   online: boolean;
   updatedAt: number;
@@ -86,7 +97,7 @@ export interface CanDevice {
 }
 
 export interface PitConnection {
-  brokerConnected: boolean;
+  gatewayConnected: boolean;
   lastMessageAt: number | null;
   deviceLastSeen: {
     cabinet: number | null;

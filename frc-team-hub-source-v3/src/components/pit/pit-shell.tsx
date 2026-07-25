@@ -81,7 +81,7 @@ export function PitShell({
       </header>
       <nav className="pit-nav">
         {NAV_ITEMS.map((item, i) => (
-          <Link key={item.en} href={item.href} className={`pit-nav-item ${i === active ? "active" : ""}`}>
+          <Link key={item.en} href={item.href} prefetch={item.href === "/pit/team" ? false : undefined} className={`pit-nav-item ${i === active ? "active" : ""}`}>
             <NavIcon kind={item.icon} active={i === active} />
             <span>
               <span className="zh">{item.zh}</span>

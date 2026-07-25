@@ -1,30 +1,29 @@
 import "server-only";
 
-import mqtt from "mqtt";
+import { DeviceGatewayClient } from "@/lib/device-gateway-client";
 import { HomeAssistantOutletManager } from "@/lib/home-assistant-outlets";
 import type { StoredPitConfig } from "@/lib/pit-config-model";
 import type { PitConfigTestResult } from "@/types/pit-config";
 
-export async function testMqttConfig(config: StoredPitConfig): Promise<PitConfigTestResult> {
+export async function testGatewayConfig(config: StoredPitConfig): Promise<PitConfigTestResult> {
   const startedAt = Date.now();
   return new Promise((resolve) => {
-    const client = mqtt.connect(config.mqtt.url, {
+    const client = new DeviceGatewayClient({
+      url: config.gateway.url,
       clientId: `pit-config-test-${Math.random().toString(16).slice(2, 8)}`,
-      username: config.mqtt.username || undefined,
-      password: config.mqtt.password || undefined,
-      reconnectPeriod: 0,
-      connectTimeout: 5_000,
+      role: "pithub",
+      token: config.gateway.token || process.env.PIT_GATEWAY_TOKEN || "",
     });
     let finished = false;
     const finish = (ok: boolean, message: string) => {
       if (finished) return;
       finished = true;
-      client.end(true);
-      resolve({ ok, target: "mqtt", latencyMs: Date.now() - startedAt, message });
+      client.stop();
+      resolve({ ok, target: "gateway", latencyMs: Date.now() - startedAt, message });
     };
-    client.once("connect", () => finish(true, "MQTT Broker 连接成功"));
-    client.once("error", (error) => finish(false, `MQTT 连接失败：${error.message}`));
-    setTimeout(() => finish(false, "MQTT 连接超时"), 6_000).unref();
+    client.once("connect", () => finish(true, "设备网关长连接成功"));
+    client.start();
+    setTimeout(() => finish(false, "设备网关连接或认证超时"), 6_000).unref();
   });
 }
 

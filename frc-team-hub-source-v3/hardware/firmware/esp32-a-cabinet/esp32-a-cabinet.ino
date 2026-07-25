@@ -1,20 +1,20 @@
 /*
  * PIT-OS ESP32-A — 16U 储存柜分控
- * 功能：HX711 称重 ×8 + WS2812 格位 LED ×64 + 柜门磁 ×8 + MQTT
- * 通信：WiFi → MQTT Broker（树莓派 5）
+ * 功能：HX711 称重 ×8 + WS2812 格位 LED ×64 + 柜门磁 ×8
+ * 通信：WiFi → WebSocket 设备网关（树莓派 5）
  */
 #include <WiFi.h>
-#include <PubSubClient.h>
+#include <ArduinoWebsockets.h>
+#include <ArduinoJson.h>
 #include <HX711.h>
 #include <FastLED.h>
+using namespace websockets;
 
 /* ---------- 配置（部署前修改） ---------- */
 const char* WIFI_SSID   = "PIT-NET";
 const char* WIFI_PASS   = "your-password";
-const char* MQTT_HOST   = "192.168.1.10";   // 树莓派 IP
-const uint16_t MQTT_PORT = 1883;
-const char* MQTT_USER   = "pit-device";
-const char* MQTT_PASS   = "change-this-password";
+const char* GATEWAY_URL = "ws://192.168.66.34:8765";
+const char* GATEWAY_TOKEN = "replace-with-gateway-token";
 const char* DEVICE_ID   = "esp32-a";
 
 /* ---------- 引脚映射（见 hardware/README.md §3） ---------- */
@@ -37,8 +37,9 @@ const char* UNIT_NOTES[8] = {
   "Anderson / XT60 / 线", "扎带 / 热缩管 / 胶带", "万用表 / 夹表", "按工序分组收纳",
 };
 
-WiFiClient espClient;
-PubSubClient mqtt(espClient);
+WebsocketsClient gateway;
+bool gatewayReady = false;
+uint32_t lastConnectAttempt = 0;
 HX711 scales[8];
 CRGB leds[LED_NUM];
 
@@ -54,7 +55,16 @@ float CAL_FACTOR[8] = { 420.f, 420.f, 420.f, 420.f, 420.f, 420.f, 420.f, 420.f }
 long  TARE[8]       = { 0, 0, 0, 0, 0, 0, 0, 0 };
 
 void publish(const char* topic, const String& payload, bool retain = true) {
-  mqtt.publish(topic, payload.c_str(), retain);
+  if (!gatewayReady) return;
+  StaticJsonDocument<1024> message;
+  message["type"] = "publish";
+  message["messageId"] = String(millis());
+  message["channel"] = topic;
+  message["payload"] = payload;
+  message["retain"] = retain;
+  String output;
+  serializeJson(message, output);
+  gateway.send(output);
 }
 
 void publishUnit(uint8_t i) {
@@ -88,12 +98,19 @@ void publishToolState(const char* slot, const char* name, const char* unit,
   publish(topic, payload);
 }
 
-/* MQTT 下行：定位闪烁 / 控制 */
-void onMqtt(char* topic, byte* payload, unsigned int len) {
-  String t(topic);
-  String p;
-  for (unsigned int i = 0; i < len; i++) p += (char)payload[i];
-
+/* WebSocket 下行：定位闪烁 / 控制 */
+void onGatewayMessage(WebsocketsMessage incoming) {
+  StaticJsonDocument<1024> envelope;
+  if (deserializeJson(envelope, incoming.data())) return;
+  const char* type = envelope["type"] | "";
+  if (!strcmp(type, "welcome")) {
+    gatewayReady = true;
+    gateway.send("{\"type\":\"subscribe\",\"channels\":[\"pit/control/locate/#\",\"pit/control/locate-unit/#\"]}");
+    publish("pit/esp32-a/status", "online");
+    return;
+  }
+  if (strcmp(type, "event")) return;
+  String t = envelope["channel"].as<String>();
   if (t.startsWith("pit/control/locate/")) {
     // pit/control/locate/U1-03 → 单元 1 格位 3
     String slot = t.substring(strlen("pit/control/locate/"));
@@ -111,24 +128,20 @@ void onMqtt(char* topic, byte* payload, unsigned int len) {
   }
 }
 
-void reconnect() {
-  while (!mqtt.connected()) {
-    if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS, "pit/esp32-a/status", 1, true, "offline")) {
-      publish("pit/esp32-a/status", "online");
-      mqtt.subscribe("pit/control/locate/#");
-      mqtt.subscribe("pit/control/locate-unit/#");
-    } else {
-      delay(2000);
-    }
-  }
+void connectGateway() {
+  if (millis() - lastConnectAttempt < 2000) return;
+  lastConnectAttempt = millis();
+  gatewayReady = false;
+  if (!gateway.connect(GATEWAY_URL)) return;
+  gateway.send("{\"type\":\"hello\",\"clientId\":\"esp32-a\",\"role\":\"cabinet\",\"token\":\"" + String(GATEWAY_TOKEN) + "\"}");
 }
 
 void setup() {
   Serial.begin(115200);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) delay(300);
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setCallback(onMqtt);
+  gateway.onMessage(onGatewayMessage);
+  gateway.onEvent([](WebsocketsEvent event, String) { if (event == WebsocketsEvent::ConnectionClosed) gatewayReady = false; });
 
   for (uint8_t i = 0; i < 8; i++) {
     scales[i].begin(HX_DT[i], HX_SCK);
@@ -142,8 +155,9 @@ void setup() {
 
 uint32_t lastReport = 0;
 void loop() {
-  if (!mqtt.connected()) reconnect();
-  mqtt.loop();
+  if (WiFi.status() != WL_CONNECTED) WiFi.reconnect();
+  if (!gateway.available()) connectGateway();
+  gateway.poll();
 
   /* 每 2s 上报称重与单元状态 */
   if (millis() - lastReport > 2000) {

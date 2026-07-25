@@ -2,19 +2,15 @@
 
 import * as THREE from "three";
 import occtimportjs from "occt-import-js";
+import type { PointCloudData } from "./point-cloud";
+
+export type { PointCloudData } from "./point-cloud";
 
 /**
  * STEP 文件 → 点云几何体
  * 用 OpenCascade (occt-import-js) 在浏览器端把 STEP 三角化为 mesh，
  * 再在三角形表面做面积加权采样，生成均匀点云。
  */
-
-export interface PointCloudData {
-  positions: Float32Array;
-  count: number;
-  center: THREE.Vector3;
-  radius: number;
-}
 
 type Mesh = {
   attributes: { position: { array: ArrayLike<number> } };
@@ -70,7 +66,10 @@ export async function stepToPointCloud(
   targetPoints = 22000,
 ): Promise<PointCloudData> {
   if (file.size === 0) throw new Error("STEP 文件为空");
-  if (file.size > 200 * 1024 * 1024) throw new Error("STEP 文件超过 200 MB，请先简化装配体");
+  const maxFileSizeMb = process.env.NEXT_PUBLIC_PIT_DEVICE_PROFILE === "pi5" ? 50 : 200;
+  if (file.size > maxFileSizeMb * 1024 * 1024) {
+    throw new Error(`STEP 文件超过 ${maxFileSizeMb} MB，请先简化装配体`);
+  }
 
   const buffer = await file.arrayBuffer();
   let result;
@@ -128,5 +127,5 @@ export async function stepToPointCloud(
     positions[i + 2] -= center.z;
   }
 
-  return { positions, count: positions.length / 3, center, radius };
+  return { positions, count: positions.length / 3, center: center.toArray(), radius };
 }

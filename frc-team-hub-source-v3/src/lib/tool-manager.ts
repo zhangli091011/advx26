@@ -32,7 +32,7 @@ export class ToolManager {
     }));
   }
 
-  get station(): ToolStationState {
+  get station(): Omit<ToolStationState, "vision"> {
     this.expireSession();
     const start = new Date();
     start.setHours(0, 0, 0, 0);
@@ -86,12 +86,14 @@ export class ToolManager {
     return this.data.activeSession;
   }
 
-  cancelSession() {
+  cancelSession(expectedId?: string) {
+    if (expectedId && this.data.activeSession?.id !== expectedId) return false;
     this.data.activeSession = null;
     this.save();
+    return true;
   }
 
-  consumeScan(scanIdInput: unknown, qrInput: unknown, stationIdInput: unknown, capturedAtInput: unknown) {
+  consumeScan(scanIdInput: unknown, sessionIdInput: unknown, qrInput: unknown, stationIdInput: unknown, capturedAtInput: unknown) {
     const scanId = typeof scanIdInput === "string" ? scanIdInput.trim().slice(0, 120) : "";
     const qr = typeof qrInput === "string" ? qrInput.trim().slice(0, 160) : "";
     if (!scanId || !qr) throw new Error("扫码事件缺少 scanId 或二维码");
@@ -99,9 +101,11 @@ export class ToolManager {
     this.expireSession();
     const session = this.data.activeSession;
     if (!session) throw new Error("当前没有借出或归还扫码会话");
+    const sessionId = typeof sessionIdInput === "string" ? sessionIdInput.trim() : "";
     const stationId = typeof stationIdInput === "string" ? stationIdInput.trim() : "";
     const capturedAt = typeof capturedAtInput === "number" && Number.isSafeInteger(capturedAtInput) ? capturedAtInput : 0;
     if (stationId !== this.stationId) throw new Error("扫码站不匹配");
+    if (sessionId !== session.id) throw new Error("扫码不属于当前操作会话");
     if (capturedAt < session.createdAt || capturedAt > session.expiresAt) throw new Error("扫码不属于当前操作会话");
     const slot = this.data.slots.find((item) => item.enabled && item.qr === qr);
     if (!slot) throw new Error("二维码未登记");

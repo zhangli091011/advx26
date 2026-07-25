@@ -1,14 +1,13 @@
 /* PIT-OS ordinary LED controller: two-LED bench test, ten-slot protocol. */
 #include <WiFi.h>
-#include <PubSubClient.h>
+#include <ArduinoWebsockets.h>
 #include <ArduinoJson.h>
+using namespace websockets;
 
 const char* WIFI_SSID = "PIT-NET";
 const char* WIFI_PASS = "your-password";
-const char* MQTT_HOST = "192.168.1.10";
-const uint16_t MQTT_PORT = 1883;
-const char* MQTT_USER = "pit-device";
-const char* MQTT_PASS = "change-this-password";
+const char* GATEWAY_URL = "ws://192.168.66.34:8765";
+const char* GATEWAY_TOKEN = "replace-with-gateway-token";
 const char* DEVICE_ID = "esp32-toolbox-2led-test";
 
 // Keep the server protocol at ten slots, but drive only the first two LEDs.
@@ -22,8 +21,23 @@ uint32_t desiredRevision = 0;
 int8_t locatingIndex = -1;
 uint32_t locatingUntil = 0;
 
-WiFiClient wifiClient;
-PubSubClient mqtt(wifiClient);
+WebsocketsClient gateway;
+bool gatewayReady = false;
+uint32_t lastConnectAttempt = 0;
+uint32_t lastHeartbeat = 0;
+
+void publishGateway(const char* channel, const String& payload, bool retain = false) {
+  if (!gatewayReady) return;
+  StaticJsonDocument<2304> message;
+  message["type"] = "publish";
+  message["messageId"] = String(millis());
+  message["channel"] = channel;
+  message["payload"] = payload;
+  message["retain"] = retain;
+  String output;
+  serializeJson(message, output);
+  gateway.send(output);
+}
 
 void setLed(uint8_t index, bool on) {
   digitalWrite(LED_PINS[index], on ? HIGH : LOW);
@@ -61,7 +75,7 @@ void showLeds() {
 
 void publishAppliedRevision() {
   String payload = "{\"revision\":" + String(desiredRevision) + ",\"applied\":true}";
-  mqtt.publish("pit/toolbox/tool-leds/status", payload.c_str(), false);
+  publishGateway("pit/toolbox/tool-leds/status", payload);
 }
 
 void applySnapshot(byte* payload, unsigned int length) {
@@ -92,10 +106,21 @@ void applySnapshot(byte* payload, unsigned int length) {
   publishAppliedRevision();
 }
 
-void onMessage(char* topic, byte* payload, unsigned int length) {
-  String name(topic);
+void onGatewayMessage(WebsocketsMessage incoming) {
+  StaticJsonDocument<2304> envelope;
+  if (deserializeJson(envelope, incoming.data())) return;
+  const char* type = envelope["type"] | "";
+  if (!strcmp(type, "welcome")) {
+    gatewayReady = true;
+    gateway.send("{\"type\":\"subscribe\",\"channels\":[\"pit/control/toolbox/#\",\"pit/control/locate/#\"]}");
+    publishGateway("pit/toolbox/status", "online", true);
+    return;
+  }
+  if (strcmp(type, "event")) return;
+  String name = envelope["channel"].as<String>();
+  String body = envelope["payload"].as<String>();
   if (name == "pit/control/toolbox/tool-leds") {
-    applySnapshot(payload, length);
+    applySnapshot((byte*)body.c_str(), body.length());
     return;
   }
   if (name.startsWith("pit/control/locate/U1-")) {
@@ -107,16 +132,13 @@ void onMessage(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-void connectMqtt() {
-  while (!mqtt.connected()) {
-    if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS, "pit/toolbox/status", 1, true, "offline")) {
-      mqtt.publish("pit/toolbox/status", "online", true);
-      mqtt.subscribe("pit/control/toolbox/tool-leds", 1);
-      mqtt.subscribe("pit/control/locate/#", 1);
-    } else {
-      delay(2000);
-    }
-  }
+void connectGateway() {
+  if (millis() - lastConnectAttempt < 2000) return;
+  lastConnectAttempt = millis();
+  gatewayReady = false;
+  if (!gateway.connect(GATEWAY_URL)) return;
+  String hello = "{\"type\":\"hello\",\"clientId\":\"" + String(DEVICE_ID) + "\",\"role\":\"toolbox\",\"token\":\"" + String(GATEWAY_TOKEN) + "\"}";
+  gateway.send(hello);
 }
 
 void setup() {
@@ -128,14 +150,18 @@ void setup() {
   selfTestLeds();
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) delay(300);
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setCallback(onMessage);
-  mqtt.setBufferSize(2048);
+  gateway.onMessage(onGatewayMessage);
+  gateway.onEvent([](WebsocketsEvent event, String) { if (event == WebsocketsEvent::ConnectionClosed) gatewayReady = false; });
 }
 
 void loop() {
-  if (!mqtt.connected()) connectMqtt();
-  mqtt.loop();
+  if (WiFi.status() != WL_CONNECTED) WiFi.reconnect();
+  if (!gateway.available()) connectGateway();
+  gateway.poll();
+  if (gatewayReady && millis() - lastHeartbeat >= 5000) {
+    lastHeartbeat = millis();
+    publishGateway("pit/toolbox/status", "online", true);
+  }
   showLeds();
   delay(20);
 }

@@ -96,6 +96,16 @@ export function nextToolState(current: ToolState, operation: ToolOperation): Too
   return "in";
 }
 
+export function parseVisionScan(value: unknown) {
+  if (!isRecord(value)) throw new Error("扫码事件格式无效");
+  const scanId = requiredString(value.scanId, 120, "扫码事件缺少 scanId");
+  const sessionId = requiredString(value.sessionId, 120, "扫码事件缺少 sessionId");
+  const qr = requiredString(value.qr, 160, "扫码事件缺少二维码");
+  const stationId = requiredString(value.stationId, 64, "扫码事件缺少扫码站");
+  const capturedAt = timestamp(value.capturedAt, "扫码时间无效");
+  return { scanId, sessionId, qr, stationId, capturedAt };
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -44,6 +44,7 @@ export function PitToolsClient() {
   const [editing, setEditing] = useState<ToolSlotConfig | null>(null);
   const [message, setMessage] = useState("");
   const [now, setNow] = useState(0);
+  const [pending, setPending] = useState(false);
 
   const allTools = state?.tools ?? EMPTY_TOOLS;
   const units = state?.units ?? [];
@@ -53,7 +54,7 @@ export function PitToolsClient() {
       allTools.filter(
         (t) =>
           (unit === "" || t.unit === unit) &&
-          (query === "" || t.name.includes(query) || t.slot.toUpperCase().includes(query.toUpperCase())),
+          (query === "" || t.name.includes(query) || t.qr?.includes(query) || t.slot.toUpperCase().includes(query.toUpperCase())),
       ),
     [allTools, unit, query],
   );
@@ -63,6 +64,8 @@ export function PitToolsClient() {
   const activeSession = station?.activeSession;
   const remaining = activeSession ? Math.max(0, Math.ceil((activeSession.expiresAt - now) / 1000)) : 0;
   const sessionActive = Boolean(activeSession && remaining > 0);
+  const vision = station?.vision;
+  const visionReady = Boolean(vision?.online && vision.ready && vision.updatedAt && now - vision.updatedAt < 20_000);
 
   async function requestTools(body: Record<string, unknown>) {
     setMessage("");
@@ -84,11 +87,14 @@ export function PitToolsClient() {
   }
 
   async function run(body: Record<string, unknown>, success: string) {
+    setPending(true);
     try {
       await requestTools(body);
       setMessage(success);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "操作失败");
+    } finally {
+      setPending(false);
     }
   }
 
@@ -136,8 +142,8 @@ export function PitToolsClient() {
             style={{ background: "transparent", border: 0, outline: "none", color: "var(--pit-text)", width: "100%", font: "inherit" }}
           />
         </div>
-        <button type="button" className="pit-tbtn primary" style={{ left: 884, width: 92 }} disabled={sessionActive} onClick={() => void run({ action: "start-session", operation: "checkout" }, "借出扫码已启动")}>借出</button>
-        <button type="button" className="pit-tbtn" style={{ left: 984, width: 92 }} disabled={sessionActive} onClick={() => void run({ action: "start-session", operation: "return" }, "归还扫码已启动")}>归还</button>
+        <button type="button" className="pit-tbtn primary" style={{ left: 884, width: 92 }} disabled={sessionActive || pending || !visionReady} onClick={() => void run({ action: "start-session", operation: "checkout" }, "借出扫码已启动")}>借出</button>
+        <button type="button" className="pit-tbtn" style={{ left: 984, width: 92 }} disabled={sessionActive || pending || !visionReady} onClick={() => void run({ action: "start-session", operation: "return" }, "归还扫码已启动")}>归还</button>
         <button type="button" className="pit-tbtn" style={{ left: 1084, width: 106 }} onClick={() => void run({ action: "sync-leds" }, "LED 状态已同步")}>同步 LED</button>
         <button type="button" className="pit-tbtn" style={{ left: 1198, width: 124 }} onClick={() => setEditing(admin?.slots[0] ?? null)}>配置 10 位</button>
         <div className="pit-th-bg" />
@@ -158,7 +164,7 @@ export function PitToolsClient() {
                 type="button"
                 className="pit-locate-mini"
                 style={{ left: 1188 }}
-                onClick={() => void pitControl("locate", t.slot)}
+                onClick={() => void pitControl("locate", t.slot).catch((error) => setMessage(error instanceof Error ? error.message : "定位失败"))}
               >
                 ◉ 定位
               </button>
@@ -167,7 +173,7 @@ export function PitToolsClient() {
         })}
         {tools.length === 0 ? (
           <div style={{ position: "absolute", left: 24, top: 200, color: "var(--pit-text-2)", fontSize: 13 }}>
-            等待储存柜数据…（pit/esp32-a/tools/*）
+            尚未配置工具位，请点击“配置 10 位”登记工具和二维码。
           </div>
         ) : null}
       </Panel>
@@ -177,11 +183,13 @@ export function PitToolsClient() {
         <h3 className="pit-station-title">
           {sessionActive && activeSession ? `${activeSession.operation === "checkout" ? "借出" : "归还"}模式 · 剩余 ${remaining}s` : "先选择借出或归还，再扫描工具二维码"}
         </h3>
-        <p className="pit-station-sub">明确操作模式 · 防重复扫码 · 状态持久化 · 10 位 LED 自动同步</p>
-        {sessionActive ? <button type="button" className="pit-tbtn" style={{ left: 29, top: 132, width: 110 }} onClick={() => void run({ action: "cancel-session" }, "扫码操作已取消")}>取消操作</button> : null}
-        {/* 摄像头取景框 */}
-        <div style={{ position: "absolute", left: 560, top: 60, width: 220, height: 160, border: "2px dashed var(--pit-accent)", display: "grid", placeItems: "center" }}>
-          <span style={{ color: "var(--pit-accent)", fontFamily: "var(--font-tech)", fontWeight: 700, fontSize: 15 }}>CAM</span>
+        <p className="pit-station-sub">Dabai DC RGB · 明确借出/归还 · 会话绑定 · 状态持久化</p>
+        {sessionActive ? <button type="button" className="pit-tbtn" style={{ left: 29, top: 132, width: 110 }} disabled={pending} onClick={() => void run({ action: "cancel-session" }, "扫码操作已取消")}>取消操作</button> : null}
+        <div style={{ position: "absolute", left: 520, top: 58, width: 260, height: 164, border: `1px solid ${visionReady ? "var(--pit-ok)" : "var(--pit-err)"}`, padding: 18 }}>
+          <strong style={{ color: visionReady ? "var(--pit-ok)" : "var(--pit-err)", fontFamily: "var(--font-tech)" }}>DABAI DC {visionReady ? "READY" : "OFFLINE"}</strong>
+          <p style={{ fontSize: 11, overflowWrap: "anywhere" }}>{vision?.device || "等待 V4L2 RGB 设备"}</p>
+          <p style={{ fontSize: 11 }}>{vision?.width && vision.height ? `${vision.width} × ${vision.height} · ${vision.backend.toUpperCase()}` : "尚未收到有效彩色帧"}</p>
+          {vision?.error ? <p style={{ color: "var(--pit-err)", fontSize: 10 }}>{vision.error}</p> : null}
         </div>
         <div className="pit-scan-ok">
           {message || (scanLatest ? `${scanLatest.t} ${scanLatest.msg}` : "等待扫码事件…")}

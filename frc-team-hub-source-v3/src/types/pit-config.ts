@@ -11,12 +11,16 @@ export type HomeAssistantOutletInput = {
 export type PitConfigView = {
   configPath: string;
   restartRequired: boolean;
-  mqtt: {
+  team: {
+    number: number;
+    name: string;
+  };
+  gateway: {
     url: string;
-    username: string;
-    password: string;
-    passwordConfigured: boolean;
-    clearPassword?: boolean;
+    clientId: string;
+    token: string;
+    tokenConfigured: boolean;
+    clearToken?: boolean;
   };
   homeAssistant: {
     baseUrl: string;

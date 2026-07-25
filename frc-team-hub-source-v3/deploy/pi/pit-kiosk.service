@@ -1,0 +1,31 @@
+[Unit]
+Description=ADVX PIT OS Cage kiosk
+After=pit-os.service seatd.service systemd-user-sessions.service
+Requires=pit-os.service
+Wants=seatd.service
+Conflicts=getty@tty1.service
+
+[Service]
+Type=simple
+User=pit-kiosk
+Group=pit-kiosk
+SupplementaryGroups=video render input
+RuntimeDirectory=pit-kiosk
+RuntimeDirectoryMode=0700
+Environment=XDG_RUNTIME_DIR=/run/pit-kiosk
+Environment=HOME=/var/lib/pit-kiosk
+Environment=LIBSEAT_BACKEND=seatd
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+PAMName=login
+ExecStartPre=/usr/local/lib/pit-os/wait-for-server.sh
+ExecStart=/usr/bin/cage -s -- /usr/bin/chromium --user-data-dir=/var/lib/pit-kiosk/chromium --kiosk --no-first-run --disable-sync --disable-translate --disable-features=Translate,OptimizationHints,MediaRouter --disable-component-update --disable-session-crashed-bubble --noerrdialogs --password-store=basic --ozone-platform=wayland http://127.0.0.1:3000/pit
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,7 @@
 import { apiError, apiSuccess, isSameOrigin } from "@/lib/api";
 import { getPitConfigPath, loadPitConfig, loadPitConfigFallback, savePitConfig } from "@/lib/pit-config";
 import { mergePitConfigInput, publicPitConfig } from "@/lib/pit-config-model";
-import { testHomeAssistantConfig, testMqttConfig } from "@/lib/pit-config-test";
+import { testGatewayConfig, testHomeAssistantConfig } from "@/lib/pit-config-test";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   try {
     const body = await request.json() as { target?: unknown };
     const config = loadPitConfig();
-    if (body.target === "mqtt") return apiSuccess(await testMqttConfig(config));
+    if (body.target === "gateway") return apiSuccess(await testGatewayConfig(config));
     if (typeof body.target === "string" && /^CH[1-8]$/.test(body.target)) {
       return apiSuccess(await testHomeAssistantConfig(config, body.target));
     }

@@ -1,10 +1,11 @@
 import "server-only";
 
-import mqtt from "mqtt";
 import { EventEmitter } from "node:events";
+import { DeviceGatewayClient } from "@/lib/device-gateway-client";
 import { HomeAssistantOutletManager } from "@/lib/home-assistant-outlets";
 import { loadPitConfigFallback } from "@/lib/pit-config";
 import { ToolManager } from "@/lib/tool-manager";
+import { parseVisionScan } from "@/lib/tool-model";
 import type {
   Battery,
   Compartment,
@@ -17,7 +18,7 @@ export type { PitState } from "@/types/pit";
 
 /**
  * PIT-OS 实时数据中心
- * 运行在树莓派 5 上：作为 MQTT 客户端连接本地 Mosquitto Broker，
+ * 运行在树莓派 5 上：通过 WebSocket 长连接接入本地设备网关，
  * 聚合两个 ESP32 分控上报的设备影子状态，供 Next.js API 读取。
  *
  * Topic 规划：
@@ -38,7 +39,7 @@ function emptyState(): PitState {
     updatedAt: 0,
     source: "empty",
     connection: {
-      brokerConnected: false,
+      gatewayConnected: false,
       lastMessageAt: null,
       deviceLastSeen: { cabinet: null, power: null, homeAssistant: null, can: null, vision: null, toolbox: null },
     },
@@ -57,6 +58,17 @@ function emptyState(): PitState {
       desiredRevision: 0,
       appliedRevision: null,
       recentTransactions: [],
+      vision: {
+        stationId: process.env.PIT_TOOL_STATION_ID?.trim() || "main",
+        online: false,
+        ready: false,
+        backend: "",
+        device: "",
+        width: null,
+        height: null,
+        error: null,
+        updatedAt: null,
+      },
     },
   };
 }
@@ -68,15 +80,18 @@ const globalForPit = globalThis as unknown as {
 
 class PitHub extends EventEmitter {
   state: PitState = emptyState();
-  private client: mqtt.MqttClient | null = null;
+  private serializedState = JSON.stringify(this.state);
+  private client: DeviceGatewayClient | null = null;
   private homeAssistant: HomeAssistantOutletManager | null = null;
   private tools = new ToolManager();
   private started = false;
+  private updateTimer: NodeJS.Timeout | null = null;
 
   start() {
     if (this.started) return;
     this.started = true;
     this.refreshTools();
+    this.queueUpdate();
     const config = loadPitConfigFallback();
     try {
       this.homeAssistant = new HomeAssistantOutletManager(config.homeAssistant);
@@ -92,36 +107,31 @@ class PitHub extends EventEmitter {
       console.error(`[home-assistant] 配置加载失败：${error instanceof Error ? error.message : String(error)}`);
       this.homeAssistant = null;
     }
-    const url = config.mqtt.url;
+    const { url, clientId } = config.gateway;
+    const token = config.gateway.token || process.env.PIT_GATEWAY_TOKEN || "";
     try {
-      this.client = mqtt.connect(url, {
-        clientId: `pit-hub-${Math.random().toString(16).slice(2, 8)}`,
-        username: config.mqtt.username || undefined,
-        password: config.mqtt.password || undefined,
-        reconnectPeriod: 3000,
-        connectTimeout: 4000,
+      this.client = new DeviceGatewayClient({
+        url,
+        clientId,
+        role: "pithub",
+        token,
+        subscriptions: ["pit/esp32-a/#", "pit/esp32-b/#", "pit/can/#", "pit/vision/#", "pit/toolbox/#"],
       });
       this.client.on("connect", () => {
-        this.state.connection.brokerConnected = true;
-        this.client?.subscribe([
-          "pit/esp32-a/#",
-          "pit/esp32-b/#",
-          "pit/can/#",
-          "pit/vision/#",
-          "pit/toolbox/#",
-        ], { qos: 1 });
+        this.state.connection.gatewayConnected = true;
         void this.publishToolLeds();
-        this.emit("update", this.state);
+        const session = this.state.toolStation.activeSession;
+        if (session) void this.publishVisionSession(session);
+        else void this.clearVisionSession(this.state.toolStation.vision.stationId);
+        this.queueUpdate();
       });
       this.client.on("close", () => {
-        if (!this.state.connection.brokerConnected) return;
-        this.state.connection.brokerConnected = false;
-        this.emit("update", this.state);
-      });
-      this.client.on("error", () => {
-        /* broker 未启动时保持静默，前端走空状态 */
+        if (!this.state.connection.gatewayConnected) return;
+        this.state.connection.gatewayConnected = false;
+        this.queueUpdate();
       });
       this.client.on("message", (topic, payload) => this.onMessage(topic, payload));
+      this.client.start();
     } catch {
       this.client = null;
     }
@@ -134,11 +144,31 @@ class PitHub extends EventEmitter {
     if (!source || !["esp32-a", "esp32-b", "can", "vision", "toolbox"].includes(source)) return;
 
     const now = Date.now();
+    if (source === "vision" && parts[2] === "status" && parts[3]) {
+      let data: unknown;
+      try { data = JSON.parse(payload.toString()); } catch { return; }
+      const status = asRecord(data);
+      if (!status || status.stationId !== parts[3]) return;
+      if (finiteNumber(status.updatedAt, 0, Number.MAX_SAFE_INTEGER) === null) return;
+      this.state.toolStation.vision = {
+        stationId: String(status.stationId),
+        online: status.online === true,
+        ready: status.ready === true,
+        backend: typeof status.backend === "string" ? status.backend.slice(0, 40) : "",
+        device: typeof status.device === "string" ? status.device.slice(0, 300) : "",
+        width: status.width == null ? null : finiteNumber(status.width, 1, 10_000),
+        height: status.height == null ? null : finiteNumber(status.height, 1, 10_000),
+        error: typeof status.error === "string" && status.error ? status.error.slice(0, 300) : null,
+        updatedAt: now,
+      };
+      this.state.connection.deviceLastSeen.vision = status.online === true ? now : null;
+      this.markUpdated(now);
+      return;
+    }
     if (parts[2] === "status") {
       const seenAt = payload.toString().trim() === "online" ? now : null;
       if (source === "esp32-a") this.state.connection.deviceLastSeen.cabinet = seenAt;
       else if (source === "esp32-b") this.state.connection.deviceLastSeen.power = seenAt;
-      else if (source === "vision") this.state.connection.deviceLastSeen.vision = seenAt;
       else if (source === "toolbox") this.state.connection.deviceLastSeen.toolbox = seenAt;
       this.markUpdated(now);
       if (source === "toolbox" && seenAt) void this.publishToolLeds();
@@ -155,7 +185,7 @@ class PitHub extends EventEmitter {
     else if (source === "esp32-b") this.state.connection.deviceLastSeen.power = now;
     else if (source === "can") this.state.connection.deviceLastSeen.can = now;
     else if (source === "toolbox") this.state.connection.deviceLastSeen.toolbox = now;
-    else this.state.connection.deviceLastSeen.vision = now;
+    else if (source === "vision") this.state.connection.deviceLastSeen.vision = now;
     let handled = false;
     if (source === "esp32-a") handled = this.handleCabinet(parts, data);
     else if (source === "esp32-b") handled = this.handlePower(parts, data);
@@ -169,7 +199,21 @@ class PitHub extends EventEmitter {
     this.state.updatedAt = now;
     this.state.source = "live";
     this.state.connection.lastMessageAt = now;
-    this.emit("update", this.state);
+    this.queueUpdate();
+  }
+
+  private queueUpdate() {
+    if (this.updateTimer) return;
+    this.updateTimer = setTimeout(() => {
+      this.updateTimer = null;
+      this.serializedState = JSON.stringify(this.state);
+      this.emit("update", this.serializedState);
+    }, 100);
+    this.updateTimer.unref();
+  }
+
+  getSerializedState() {
+    return this.updateTimer ? JSON.stringify(this.state) : this.serializedState;
   }
 
   /* ESP32-A：16U 储存柜（工具位 / 储物单元 / 格位） */
@@ -243,7 +287,7 @@ class PitHub extends EventEmitter {
         amps,
         watts,
         on: d.on,
-        provider: "mqtt",
+        provider: "gateway",
         transport: null,
         online: true,
         updatedAt: Date.now(),
@@ -301,28 +345,26 @@ class PitHub extends EventEmitter {
   /* 视觉识别扫码事件 */
   private handleVision(parts: string[], data: unknown) {
     if (parts[2] !== "scan") return false;
-    const d = asRecord(data);
-    if (!d) return false;
-    if (typeof d.scanId === "string" && typeof d.qr === "string") {
+    try {
+      const scan = parseVisionScan(data);
       try {
-        const result = this.tools.consumeScan(d.scanId, d.qr, d.stationId, d.capturedAt);
+        const result = this.tools.consumeScan(scan.scanId, scan.sessionId, scan.qr, scan.stationId, scan.capturedAt);
         if (result.duplicate) return false;
         this.refreshTools();
         this.addScanLog(
           `${result.operation === "checkout" ? "借出" : "归还"}「${result.slot.name}」· ${result.slot.slot}`,
           "ok",
         );
+        void this.clearVisionSession(scan.stationId);
         void this.publishToolLeds();
       } catch (error) {
         this.refreshTools();
         this.addScanLog(error instanceof Error ? error.message : "扫码处理失败", "err");
       }
       return true;
+    } catch {
+      return false;
     }
-    const kind = oneOf(d.kind, ["ok", "warn", "err"] as const);
-    if (!kind || typeof d.msg !== "string") return false;
-    this.addScanLog(d.msg, kind);
-    return true;
   }
 
   private addScanLog(msg: string, kind: "ok" | "warn" | "err") {
@@ -336,20 +378,13 @@ class PitHub extends EventEmitter {
 
   private refreshTools() {
     const appliedRevision = this.state.toolStation.appliedRevision;
+    const vision = this.state.toolStation.vision;
     this.state.tools = this.tools.tools;
-    this.state.toolStation = { ...this.tools.station, appliedRevision };
+    this.state.toolStation = { ...this.tools.station, appliedRevision, vision };
   }
 
   private publishToolLeds(): Promise<boolean> {
-    if (!this.client?.connected) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      this.client?.publish(
-        "pit/control/toolbox/tool-leds",
-        JSON.stringify(this.tools.ledSnapshot()),
-        { qos: 1, retain: true },
-        (error) => resolve(!error),
-      );
-    });
+    return this.client?.publish("pit/control/toolbox/tool-leds", JSON.stringify(this.tools.ledSnapshot()), true) ?? Promise.resolve(false);
   }
 
   getToolAdminState() {
@@ -365,31 +400,66 @@ class PitHub extends EventEmitter {
     return result;
   }
 
-  startToolSession(operation: unknown) {
+  async startToolSession(operation: unknown) {
+    if (!this.client?.connected) throw new Error("设备网关未连接，无法启动扫码");
+    if (!this.isVisionReady()) throw new Error("Dabai DC 相机未就绪");
     const result = this.tools.startSession(operation);
     this.refreshTools();
     this.markUpdated(Date.now());
+    const sent = await this.publishVisionSession(result);
+    if (!sent) {
+      this.tools.cancelSession(result.id);
+      this.refreshTools();
+      this.markUpdated(Date.now());
+      throw new Error("扫码会话下发失败");
+    }
+    setTimeout(() => {
+      if (!this.tools.cancelSession(result.id)) return;
+      this.refreshTools();
+      void this.clearVisionSession(this.state.toolStation.vision.stationId);
+      this.markUpdated(Date.now());
+    }, Math.max(0, result.expiresAt - Date.now())).unref();
     return result;
   }
 
-  cancelToolSession() {
+  async cancelToolSession() {
     this.tools.cancelSession();
     this.refreshTools();
     this.markUpdated(Date.now());
+    await this.clearVisionSession(this.state.toolStation.vision.stationId);
   }
 
   syncToolLeds() {
     return this.publishToolLeds();
   }
 
-  /** 下行控制：发布 MQTT 指令给分控 */
+  private isVisionReady() {
+    const vision = this.state.toolStation.vision;
+    return vision.online && vision.ready && vision.updatedAt !== null && Date.now() - vision.updatedAt < 20_000;
+  }
+
+  private publishVisionSession(session: NonNullable<PitState["toolStation"]["activeSession"]>) {
+    return this.publishTopic(`pit/control/vision/session/${this.state.toolStation.vision.stationId}`, JSON.stringify({
+      sessionId: session.id,
+      operation: session.operation,
+      createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
+    }), true);
+  }
+
+  private clearVisionSession(stationId: string) {
+    return this.publishTopic(`pit/control/vision/session/${stationId}`, "", true);
+  }
+
+  private publishTopic(topic: string, payload: string, retain: boolean) {
+    if (!this.client?.connected) return Promise.resolve(false);
+    return this.client.publish(topic, payload, retain);
+  }
+
+  /** 下行控制：经 WebSocket 长连接发送给分控 */
   publishControl(target: string, payload: Record<string, unknown>): Promise<boolean> {
     if (!this.client?.connected) return Promise.resolve(false);
-    return new Promise((resolve) => {
-      this.client?.publish(`pit/control/${target}`, JSON.stringify(payload), { qos: 1 }, (error) => {
-        resolve(!error);
-      });
-    });
+    return this.client.publish(`pit/control/${target}`, JSON.stringify(payload));
   }
 
   hasHomeAssistantChannel(id: string) {

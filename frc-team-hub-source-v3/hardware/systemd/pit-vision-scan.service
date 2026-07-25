@@ -1,0 +1,22 @@
+[Unit]
+Description=PIT-OS Dabai DC QR scanner
+After=network-online.target pit-device-gateway.service
+Requires=pit-device-gateway.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pit
+Group=video
+EnvironmentFile=/etc/pit-vision-scan.env
+EnvironmentFile=/etc/pit-os/gateway.env
+ExecStart=/usr/bin/python3 /opt/pit-os/hardware/scripts/vision-scan.py
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

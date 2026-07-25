@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PitUpdateButton } from "@/components/pit/pit-update-button";
 import { PitFullscreenButton } from "@/components/pit/pit-fullscreen-button";
 import { pitControl, usePitState, type PitTool } from "@/components/pit/use-pit-state";
+import { useMatchData } from "@/components/pit/use-match-data";
 import type { PitState, RackUnit } from "@/types/pit";
 
 /* 静态导航与展示常量（非设备状态） */
@@ -60,6 +61,7 @@ function Panel({
 
 export function PitClient() {
   const { state, live } = usePitState();
+  const { data: matchData, loading: matchesLoading } = useMatchData();
   const [now, setNow] = useState<Date | null>(null);
   const [locating, setLocating] = useState<PitTool | null>(null);
 
@@ -82,7 +84,13 @@ export function PitClient() {
   const units = state?.units ?? [];
   const channels = state?.channels ?? [];
   const canDevices = state?.canDevices ?? [];
-  const brokerOnline = live && state?.connection.brokerConnected === true;
+  const gatewayOnline = live && state?.connection.gatewayConnected === true;
+  const teamNumber = matchData?.teamNumber ?? 8214;
+  const nextMatch = matchData?.matches.find((match) => (
+    !match.played
+    && match.estimatedTime !== null
+    && (match.red.teams.includes(teamNumber) || match.blue.teams.includes(teamNumber))
+  )) ?? null;
 
   const stats = useMemo(() => ({
     inCount: tools.filter((t) => t.state === "in").length,
@@ -117,8 +125,8 @@ export function PitClient() {
           <PitFullscreenButton />
           <PitUpdateButton />
           <div className="pit-chip">
-            <i style={{ background: brokerOnline ? "var(--pit-ok)" : "var(--pit-err)" }} />
-            <small>MQTT</small><strong>{brokerOnline ? "ONLINE" : "OFFLINE"}</strong>
+            <i style={{ background: gatewayOnline ? "var(--pit-ok)" : "var(--pit-err)" }} />
+            <small>LINK</small><strong>{gatewayOnline ? "ONLINE" : "OFFLINE"}</strong>
           </div>
           <div className="pit-chip">
             <i style={{ background: "var(--pit-accent)" }} />
@@ -135,7 +143,7 @@ export function PitClient() {
       {/* 左侧导航 */}
       <nav className="pit-nav">
         {NAV.map((item, i) => (
-          <Link key={item.en} href={item.href} className={`pit-nav-item ${i === 0 ? "active" : ""}`}>
+          <Link key={item.en} href={item.href} prefetch={item.href === "/pit/team" ? false : undefined} className={`pit-nav-item ${i === 0 ? "active" : ""}`}>
             <NavIcon kind={item.icon} active={i === 0} />
             <span>
               <span className="zh">{item.zh}</span>
@@ -152,7 +160,20 @@ export function PitClient() {
 
       {/* 下一场比赛 */}
       <Panel x={224} y={96} w={560} h={300} title="下一场比赛" en="NEXT MATCH">
-        <Unconfigured label="赛事 API 未配置" />
+        {nextMatch ? (
+          <>
+            <div className="pit-match-label">TEAM {teamNumber} · {matchData?.event.key}</div>
+            <div className="pit-match-num">{nextMatch.label}</div>
+            <div className="pit-countdown-label">预计开始</div>
+            <div className="pit-countdown" style={{ fontSize: 27 }}>
+              {new Date(nextMatch.estimatedTime! * 1000).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            </div>
+            <div className={`pit-alliance ${nextMatch.blue.teams.includes(teamNumber) ? "blue" : ""}`}>
+              <strong>{nextMatch.red.teams.includes(teamNumber) ? "RED ALLIANCE" : "BLUE ALLIANCE"}</strong>
+              <span className="teams">{(nextMatch.red.teams.includes(teamNumber) ? nextMatch.red.teams : nextMatch.blue.teams).join(" · ")}</span>
+            </div>
+          </>
+        ) : <Unconfigured label={matchesLoading ? "正在加载赛事数据…" : matchData ? `TEAM ${teamNumber} 当前赛事没有未完成场次` : "赛事数据源暂不可用"} />}
       </Panel>
 
       {/* CAN 总线 */}
@@ -277,8 +298,8 @@ export function PitClient() {
         <span className="live">赛事比分未配置</span>
         <span className="ai">
           {state?.scanLog[0]
-            ? `│  最近扫码：${state.scanLog[0].msg}  │  API ${live ? "在线" : "离线"} · MQTT ${brokerOnline ? "在线" : "离线"}`
-            : `│  等待视觉识别扫码事件…  │  API ${live ? "在线" : "离线"} · MQTT ${brokerOnline ? "在线" : "离线"}`}
+            ? `│  最近扫码：${state.scanLog[0].msg}  │  API ${live ? "在线" : "离线"} · 长连接 ${gatewayOnline ? "在线" : "离线"}`
+            : `│  等待视觉识别扫码事件…  │  API ${live ? "在线" : "离线"} · 长连接 ${gatewayOnline ? "在线" : "离线"}`}
         </span>
       </div>
 

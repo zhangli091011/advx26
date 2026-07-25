@@ -1,5 +1,4 @@
-import * as THREE from "three";
-import type { PointCloudData } from "./step-points";
+import type { PointCloudData } from "./point-cloud";
 
 const DATABASE_NAME = "pit-os-models";
 const STORE_NAME = "models";
@@ -49,7 +48,7 @@ export async function loadDefaultStepModel(): Promise<DefaultStepModel | null> {
     cloud: {
       positions,
       count: record.count,
-      center: new THREE.Vector3(...record.center),
+      center: record.center,
       radius: record.radius,
     },
   };
@@ -66,7 +65,7 @@ export async function saveDefaultStepModel(fileName: string, cloud: PointCloudDa
     savedAt: Date.now(),
     positions: positions.buffer,
     count: cloud.count,
-    center: cloud.center.toArray(),
+    center: cloud.center,
     radius: cloud.radius,
     source,
     sourceType: sourceFile.type,

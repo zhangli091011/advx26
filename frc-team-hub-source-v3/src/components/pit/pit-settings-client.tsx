@@ -9,7 +9,8 @@ type DesktopWindow = Window & { pitDesktop?: { restartApplication(): Promise<voi
 const EMPTY_CONFIG: PitConfigView = {
   configPath: "",
   restartRequired: true,
-  mqtt: { url: "mqtt://127.0.0.1:1883", username: "", password: "", passwordConfigured: false },
+  team: { number: 8214, name: "" },
+  gateway: { url: "ws://127.0.0.1:8765", clientId: "pithub-main", token: "", tokenConfigured: false },
   homeAssistant: {
     baseUrl: "http://homeassistant.local:8123",
     accessToken: "",
@@ -58,7 +59,7 @@ export function PitSettingsClient() {
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error ?? "配置保存失败");
       setConfig(result.data);
-      setMessage("配置已保存，重启服务后生效");
+      setMessage("配置已保存；赛队信息立即生效，硬件连接配置重启后生效");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "配置保存失败");
     } finally {
@@ -143,17 +144,30 @@ export function PitSettingsClient() {
 
   return (
     <PitShell title="TEST & CONFIG MANAGEMENT" active={7}>
-      <Panel x={224} y={96} w={520} h={420} title="MQTT 配置" en="BROKER">
-        <div className="pit-settings-form">
-          <Field label="Broker URL" value={config.mqtt.url} onChange={(url) => setConfig({ ...config, mqtt: { ...config.mqtt, url } })} />
-          <Field label="用户名" value={config.mqtt.username} onChange={(username) => setConfig({ ...config, mqtt: { ...config.mqtt, username } })} />
-          <SecretField label="密码" value={config.mqtt.password} configured={config.mqtt.passwordConfigured} clear={config.mqtt.clearPassword === true} onChange={(password) => setConfig({ ...config, mqtt: { ...config.mqtt, password, clearPassword: false } })} onClear={(clearPassword) => setConfig({ ...config, mqtt: { ...config.mqtt, clearPassword } })} />
-          <TestButton target="mqtt" testing={testing} result={testResults.mqtt} onTest={runTest} />
+      <Panel x={224} y={96} w={360} h={420} title="赛队配置" en="TEAM IDENTITY">
+        <div className="pit-settings-team">
+          <Field label="FRC 队号" type="number" value={String(config.team.number)} onChange={(number) => setConfig({ ...config, team: { ...config.team, number: Number(number) } })} />
+          <Field label="赛队名称（可选）" value={config.team.name} onChange={(name) => setConfig({ ...config, team: { ...config.team, name } })} />
+          <div className="pit-settings-team-preview">
+            <span>OUR TEAM</span>
+            <strong>{Number.isInteger(config.team.number) && config.team.number > 0 ? config.team.number : "—"}</strong>
+            <small>{config.team.name || "未填写赛队名称"}</small>
+          </div>
+          <p>用于赛事页面识别我方联盟、下一场比赛和赛区排名。保存后立即生效。</p>
         </div>
       </Panel>
 
-      <Panel x={760} y={96} w={560} h={420} title="Home Assistant" en="REST API">
-        <div className="pit-settings-form two-col">
+      <Panel x={600} y={96} w={400} h={420} title="设备网关" en="WEBSOCKET">
+        <div className="pit-settings-form">
+          <Field label="WebSocket URL" value={config.gateway.url} onChange={(url) => setConfig({ ...config, gateway: { ...config.gateway, url } })} />
+          <Field label="客户端 ID" value={config.gateway.clientId} onChange={(clientId) => setConfig({ ...config, gateway: { ...config.gateway, clientId } })} />
+          <SecretField label="访问令牌" value={config.gateway.token} configured={config.gateway.tokenConfigured} clear={config.gateway.clearToken === true} onChange={(token) => setConfig({ ...config, gateway: { ...config.gateway, token, clearToken: false } })} onClear={(clearToken) => setConfig({ ...config, gateway: { ...config.gateway, clearToken } })} />
+          <TestButton target="gateway" testing={testing} result={testResults.gateway} onTest={runTest} />
+        </div>
+      </Panel>
+
+      <Panel x={1016} y={96} w={480} h={420} title="Home Assistant" en="REST API">
+        <div className="pit-settings-form">
           <Field label="HA URL" value={config.homeAssistant.baseUrl} onChange={(baseUrl) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, baseUrl } })} />
           <SecretField label="长期访问令牌" value={config.homeAssistant.accessToken} configured={config.homeAssistant.accessTokenConfigured} clear={config.homeAssistant.clearAccessToken === true} onChange={(accessToken) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, accessToken, clearAccessToken: false } })} onClear={(clearAccessToken) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, clearAccessToken } })} />
           <Field label="轮询间隔 ms" type="number" value={String(config.homeAssistant.pollIntervalMs)} onChange={(value) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, pollIntervalMs: Number(value) } })} />
@@ -162,11 +176,11 @@ export function PitSettingsClient() {
         </div>
       </Panel>
 
-      <Panel x={1336} y={96} w={544} h={420} title="诊断与应用" en="DIAGNOSTICS">
+      <Panel x={1512} y={96} w={368} h={420} title="诊断与应用" en="DIAGNOSTICS">
         <div className="pit-settings-summary">
           <strong>{loading ? "正在读取配置..." : "配置存储"}</strong>
           <code>{config.configPath || "尚未确定"}</code>
-          <p>令牌只保存在服务端。保存后重启以应用 Home Assistant 通道。</p>
+          <p>赛队信息保存后立即用于赛事页面。令牌只保存在服务端；硬件连接配置需要重启应用。</p>
           <div className={`pit-settings-message ${message.includes("失败") || message.includes("无效") ? "error" : ""}`}>{message || "先在 Home Assistant 中添加小米设备，再在此导入实体。"}</div>
           <button className="pit-settings-primary" type="button" disabled={saving || loading} onClick={() => void save()}>{saving ? "保存中..." : "保存全部配置"}</button>
           <button className="pit-settings-secondary" type="button" onClick={() => void restart()}>重启并应用</button>

@@ -1,0 +1,22 @@
+[Unit]
+Description=ADVX PIT OS WebSocket device gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pit-os
+Group=pit-os
+WorkingDirectory=/opt/pit-os/current
+Environment=PIT_GATEWAY_PORT=8765
+EnvironmentFile=/etc/pit-os/gateway.env
+ExecStart=/usr/bin/node device-gateway.mjs
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -2,14 +2,15 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { clearDefaultStepModel, loadDefaultStepModel, saveDefaultStepModel } from "./step-model-cache";
-import { stepToPointCloud, type PointCloudData } from "./step-points";
+import type { PointCloudData } from "./point-cloud";
 
 // three.js 必须在客户端动态加载（禁用 SSR）
 const ParticleScene = dynamic(() => import("./particle-scene"), { ssr: false });
 
 type LoadState = "idle" | "loading-cache" | "parsing" | "ready" | "error";
 const PARTICLE_OPTIONS = [22000, 40000, 60000, 100000] as const;
+const IS_PI = process.env.NEXT_PUBLIC_PIT_DEVICE_PROFILE === "pi5";
+const PI_PARTICLE_OPTIONS = [22000, 30000, 40000, 60000] as const;
 
 export function StepViewer() {
   const [cloud, setCloud] = useState<PointCloudData | null>(null);
@@ -18,7 +19,7 @@ export function StepViewer() {
   const [assemble, setAssemble] = useState(1);
   const [replay, setReplay] = useState(0);
   const [viewReset, setViewReset] = useState(0);
-  const [particleTarget, setParticleTarget] = useState(60000);
+  const [particleTarget, setParticleTarget] = useState(IS_PI ? 30000 : 60000);
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [isDefault, setIsDefault] = useState(false);
   const [error, setError] = useState("");
@@ -32,7 +33,8 @@ export function StepViewer() {
 
   useEffect(() => {
     let cancelled = false;
-    loadDefaultStepModel()
+    import("./step-model-cache")
+      .then(({ loadDefaultStepModel }) => loadDefaultStepModel())
       .then((model) => {
         if (cancelled) return;
         if (!model) {
@@ -69,6 +71,7 @@ export function StepViewer() {
     setIsDefault(false);
     setAssemble(0);
     try {
+      const { stepToPointCloud } = await import("./step-points");
       const data = await stepToPointCloud(file, targetPoints);
       if (loadId !== loadIdRef.current) return;
       setCloud(data);
@@ -93,6 +96,7 @@ export function StepViewer() {
   async function saveAsDefault() {
     if (!cloud || !sourceFile) return;
     try {
+      const { saveDefaultStepModel } = await import("./step-model-cache");
       await saveDefaultStepModel(fileName, cloud, sourceFile);
       setIsDefault(true);
       replayAnimation();
@@ -104,7 +108,10 @@ export function StepViewer() {
 
   async function resetModel() {
     loadIdRef.current += 1;
-    if (isDefault) await clearDefaultStepModel().catch(() => undefined);
+    if (isDefault) {
+      const { clearDefaultStepModel } = await import("./step-model-cache");
+      await clearDefaultStepModel().catch(() => undefined);
+    }
     setCloud(null);
     setFileName("未导入 STEP 文件");
     setStatus("idle");
@@ -176,7 +183,7 @@ export function StepViewer() {
             disabled={status === "parsing" || status === "loading-cache" || (cloud !== null && sourceFile === null)}
             onChange={(event) => changeParticleTarget(Number(event.target.value))}
           >
-            {PARTICLE_OPTIONS.map((count) => <option key={count} value={count}>{count / 1000}K</option>)}
+            {(IS_PI ? PI_PARTICLE_OPTIONS : PARTICLE_OPTIONS).map((count) => <option key={count} value={count}>{count / 1000}K</option>)}
           </select>
         </label>
         {cloud ? (

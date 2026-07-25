@@ -2,7 +2,7 @@
 
 面向 FRC 维修区（Pit）的智能工具箱控制面板，运行于**树莓派 5 + 22" 触摸屏**，配合两个 **ESP32 分控**实现工具/零件/电源/CAN 的实时监控。
 
-终末地工业风 UI（深炭底 + 工业黄）。设备遥测通过 MQTT + SSE 实时推送；未接入数据源的功能统一显示“未配置”。
+终末地工业风 UI（深炭底 + 工业黄）。设备通过 WebSocket 长连接上报，服务端经 SSE 实时推送到面板；未接入数据源的功能统一显示“未配置”。
 
 ## 功能页面（`/pit`）
 
@@ -15,18 +15,18 @@
 | `/pit/match` | 赛事信息：实时比分、下场倒计时、完整赛程、AI 云端战略分析 |
 | `/pit/power` | 电源控制：ESP32 继电器或米家智能插座 3、总负载仪表、电池充电 |
 | `/pit/team` | 战队展示：形象墙、机器能力、Pit Interview 流程清单 |
-| `/pit/settings` | 测试管理：MQTT、米家云、插座通道配置及连接测试 |
+| `/pit/settings` | 测试管理：设备网关、Home Assistant、插座通道配置及连接测试 |
 
 ## 架构
 
 ```
-树莓派 5 (Next.js UI + Mosquitto MQTT Broker + can-bridge + vision-scan)
-   │ MQTT over WiFi
+树莓派 5 (Next.js UI + WebSocket device gateway + can-bridge + vision-scan)
+   │ WebSocket over WiFi
    ├─ ESP32-A  16U 储存柜分控（HX711 称重×8 · WS2812 格位 LED ×64 · 门磁×8）
    └─ ESP32-B  电源配电箱分控（继电器×8 · ACS712 电流×8 · 电池电压×4 · DS18B20×2）
 
-机器人 CAN 总线 → USB-CAN 适配器 → 树莓派 can-bridge → MQTT
-工具二维码     → USB 摄像头     → 树莓派 vision-scan → MQTT
+机器人 CAN 总线 → USB-CAN 适配器 → 树莓派 can-bridge → WebSocket
+工具二维码     → Dabai DC RGB   → 树莓派 vision-scan → WebSocket
 小米智能插座 → Home Assistant → REST API → Next.js
 ```
 
@@ -40,7 +40,7 @@ npm run dev
 # 打开 http://localhost:3000 → 自动跳转 /pit
 ```
 
-默认无硬件时显示空态与 MQTT topic 提示；连接 Broker 并收到设备上报后显示真实数据。
+默认无硬件时显示空态；设备建立长连接并上报后显示真实数据。
 
 ## Home Assistant 电源
 
@@ -59,11 +59,13 @@ npm run build
 
 ## 树莓派部署
 
-见 [`hardware/README.md`](hardware/README.md)：系统拓扑、接线表、Mosquitto/SocketCAN/systemd 部署脚本、MQTT topic 契约。
+无桌面环境的 Pi 5 kiosk 安装见 [`deploy/pi/README.md`](deploy/pi/README.md)。它使用 Raspberry Pi OS Lite、Linux ARM64 standalone、Cage 和系统 Chromium，不运行 Electron。
+
+硬件服务见 [`hardware/README.md`](hardware/README.md)：系统拓扑、接线表、WebSocket/SocketCAN/systemd 部署和通道契约。
 
 ## 分控固件
 
 - `hardware/firmware/esp32-a-cabinet/` — 储存柜（称重 + LED 寻物 + 门磁）
 - `hardware/firmware/esp32-b-power/` — 配电箱（继电器 + 电流 + 电池 + 温度断电保护）
 - `hardware/scripts/vision-scan.py` — 视觉扫码入库（OpenCV + pyzbar）
-- `hardware/scripts/can-bridge.js` — CAN 转 MQTT 桥（SocketCAN）
+- `hardware/scripts/can-bridge.js` — CAN 转 WebSocket 桥（SocketCAN）
