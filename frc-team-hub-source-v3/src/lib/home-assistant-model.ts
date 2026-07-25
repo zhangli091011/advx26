@@ -1,4 +1,9 @@
-import type { HomeAssistantState } from "@/lib/home-assistant-client";
+export type HomeAssistantState = {
+  entity_id: string;
+  state: string;
+  attributes: Record<string, unknown>;
+  last_updated?: string;
+};
 
 export type DiscoveredHomeAssistantOutlet = {
   entityId: string;

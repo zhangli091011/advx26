@@ -28,10 +28,10 @@ export function environmentPitConfig(env: Record<string, string | undefined> = p
     },
     homeAssistant: {
       baseUrl: normalizeOptionalHomeAssistantUrl(env.HOME_ASSISTANT_URL),
-      accessToken: env.HOME_ASSISTANT_TOKEN ?? "",
+      accessToken: env.HOME_ASSISTANT_ACCESS_TOKEN ?? env.HOME_ASSISTANT_TOKEN ?? "",
       pollIntervalMs: boundedInteger(env.HOME_ASSISTANT_POLL_INTERVAL_MS, 10_000, 5_000, 300_000),
       migrationRequired: false,
-      outlets: parseHomeAssistantOutlets(parseJsonArray(env.HOME_ASSISTANT_OUTLETS_JSON)),
+      outlets: parseEnvironmentOutlets(env),
     },
   };
 }
@@ -47,6 +47,11 @@ export function parseStoredPitConfig(value: unknown): StoredPitConfig {
 export function mergePitConfigInput(input: unknown, current: StoredPitConfig): StoredPitConfig {
   if (!isRecord(input) || !isRecord(input.team) || !isRecord(input.gateway) || !isRecord(input.homeAssistant)) throw new Error("请求配置结构无效");
   const outlets = parseHomeAssistantOutlets(input.homeAssistant.outlets);
+  const nextBaseUrl = normalizeOptionalHomeAssistantUrl(input.homeAssistant.baseUrl);
+  const submittedAccessToken = optionalText(input.homeAssistant.accessToken);
+  if (nextBaseUrl !== current.homeAssistant.baseUrl && current.homeAssistant.accessToken && !submittedAccessToken) {
+    throw new Error("修改 Home Assistant 地址时必须重新输入访问令牌");
+  }
   return parseVersion3({
     version: 3,
     team: {
@@ -59,7 +64,7 @@ export function mergePitConfigInput(input: unknown, current: StoredPitConfig): S
       token: input.gateway.clearToken === true ? "" : optionalText(input.gateway.token) || current.gateway.token,
     },
     homeAssistant: {
-      baseUrl: input.homeAssistant.baseUrl,
+      baseUrl: nextBaseUrl,
       accessToken: input.homeAssistant.clearAccessToken === true
         ? ""
         : optionalText(input.homeAssistant.accessToken) || current.homeAssistant.accessToken,
@@ -124,11 +129,20 @@ function parseVersion3(value: Record<string, unknown>): StoredPitConfig {
 
 function migrateVersion2(value: Record<string, unknown>): StoredPitConfig {
   if (!isRecord(value.homeAssistant)) throw new Error("旧配置文件结构无效");
+  const outlets = Array.isArray(value.homeAssistant.outlets)
+    ? value.homeAssistant.outlets
+    : migrateBindings(value.homeAssistant.bindings);
   return parseVersion3({
     version: 3,
     team: value.team,
     gateway: { url: "ws://127.0.0.1:8765", clientId: "pithub-main", token: "" },
-    homeAssistant: value.homeAssistant,
+    homeAssistant: {
+      baseUrl: value.homeAssistant.baseUrl,
+      accessToken: value.homeAssistant.accessToken,
+      pollIntervalMs: value.homeAssistant.pollIntervalMs,
+      migrationRequired: false,
+      outlets,
+    },
   });
 }
 
@@ -199,6 +213,24 @@ function parseJsonArray(value: string | undefined) {
   } catch {
     throw new Error("HOME_ASSISTANT_OUTLETS_JSON 必须是有效 JSON 数组");
   }
+}
+
+function parseEnvironmentOutlets(env: Record<string, string | undefined>) {
+  if (env.HOME_ASSISTANT_OUTLETS_JSON?.trim()) return parseHomeAssistantOutlets(parseJsonArray(env.HOME_ASSISTANT_OUTLETS_JSON));
+  return parseHomeAssistantOutlets(migrateBindings(parseJsonArray(env.HOME_ASSISTANT_BINDINGS_JSON)));
+}
+
+function migrateBindings(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => isRecord(item) ? {
+    id: item.channelId,
+    name: item.name,
+    zone: item.zone,
+    switchEntityId: item.controlEntityId,
+    wattsEntityId: item.powerEntityId,
+    voltsEntityId: item.voltageEntityId,
+    ampsEntityId: item.currentEntityId,
+  } : item);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

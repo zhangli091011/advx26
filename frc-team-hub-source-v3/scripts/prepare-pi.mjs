@@ -24,6 +24,12 @@ fs.cpSync(path.join(root, ".next", "static"), path.join(destination, ".next", "s
   recursive: true,
 });
 fs.cpSync(path.join(root, "deploy", "pi", "device-gateway.mjs"), path.join(destination, "device-gateway.mjs"));
+fs.mkdirSync(path.join(destination, "hardware", "scripts"), { recursive: true });
+fs.cpSync(path.join(root, "hardware", "scripts", "vision-scan.py"), path.join(destination, "hardware", "scripts", "vision-scan.py"));
+fs.mkdirSync(path.join(destination, "deploy", "pi"), { recursive: true });
+for (const file of ["mediamtx.yml", "pit-media.service", "THIRD_PARTY_NOTICES.md"]) {
+  fs.cpSync(path.join(root, "deploy", "pi", file), path.join(destination, "deploy", "pi", file));
+}
 fs.cpSync(path.join(root, "node_modules", "ws"), path.join(destination, "node_modules", "ws"), {
   recursive: true,
   dereference: true,

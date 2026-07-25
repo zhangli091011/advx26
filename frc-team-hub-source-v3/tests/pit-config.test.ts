@@ -47,9 +47,11 @@ test("validates gateway, Home Assistant URLs, and entity IDs", () => {
   assert.throws(() => parseStoredPitConfig({ ...base, gateway: { ...base.gateway, url: "https://gateway.example" } }), /仅支持 ws/);
   assert.throws(() => parseStoredPitConfig({ ...base, homeAssistant: { ...base.homeAssistant, baseUrl: "ftp://ha.local" } }), /HTTP/);
   assert.throws(() => parseStoredPitConfig({ ...base, homeAssistant: { ...base.homeAssistant, outlets: [{ ...base.homeAssistant.outlets[0], switchEntityId: "sensor.not_a_switch" }] } }), /switch/);
+  assert.throws(() => parseStoredPitConfig({ ...base, homeAssistant: { ...base.homeAssistant, baseUrl: "http://user:secret@ha.local:8123" } }), /HTTP/);
+  assert.equal(parseStoredPitConfig({ ...base, homeAssistant: { ...base.homeAssistant, baseUrl: "http://ha.local:8123/dashboard/path" } }).homeAssistant.baseUrl, "http://ha.local:8123");
 });
 
-test("environment config supports Home Assistant REST", () => {
+test("environment config supports current and dev Home Assistant names", () => {
   const config = environmentPitConfig({
     PIT_GATEWAY_URL: "wss://gateway.example/device",
     PIT_GATEWAY_TOKEN: "token-1",
@@ -67,6 +69,15 @@ test("environment config supports Home Assistant REST", () => {
   assert.equal(config.homeAssistant.accessToken, "token");
   assert.equal(config.homeAssistant.pollIntervalMs, 15_000);
   assert.equal(config.homeAssistant.outlets[0].switchEntityId, "switch.pit");
+  const devNames = environmentPitConfig({
+    HOME_ASSISTANT_URL: "http://ha.local:8123",
+    HOME_ASSISTANT_ACCESS_TOKEN: "new-token",
+    HOME_ASSISTANT_BINDINGS_JSON: '[{"channelId":"CH3","name":"Dev plug","zone":"pit","controlEntityId":"switch.dev","powerEntityId":"sensor.dev_power"}]',
+  });
+  assert.equal(devNames.homeAssistant.accessToken, "new-token");
+  assert.deepEqual(devNames.homeAssistant.outlets[0], {
+    id: "CH3", name: "Dev plug", zone: "pit", switchEntityId: "switch.dev", wattsEntityId: "sensor.dev_power", voltsEntityId: undefined, ampsEntityId: undefined,
+  });
 });
 
 test("migrates version 1 Xiaomi channels without fabricating HA entities", () => {
@@ -91,4 +102,35 @@ test("migrates version 2 MQTT config to the local WebSocket gateway", () => {
   assert.equal(config.version, 3);
   assert.deepEqual(config.gateway, { url: "ws://127.0.0.1:8765", clientId: "pithub-main", token: "" });
   assert.doesNotMatch(JSON.stringify(config), /old-secret/);
+});
+
+test("migrates dev version 2 bindings without losing Home Assistant entities", () => {
+  const config = parseStoredPitConfig({
+    version: 2,
+    mqtt: { url: "mqtt://127.0.0.1:1883", username: "old", password: "old-secret" },
+    homeAssistant: {
+      baseUrl: "http://ha.local:8123/home/dashboard",
+      accessToken: "ha-token",
+      mode: "active",
+      bindings: [{
+        channelId: "CH4", name: "Dev outlet", zone: "pit", controlEntityId: "switch.dev_outlet",
+        powerEntityId: "sensor.dev_power", voltageEntityId: "sensor.dev_voltage", currentEntityId: "sensor.dev_current",
+      }],
+    },
+  });
+  assert.equal(config.version, 3);
+  assert.equal(config.homeAssistant.baseUrl, "http://ha.local:8123");
+  assert.equal(config.homeAssistant.accessToken, "ha-token");
+  assert.deepEqual(config.homeAssistant.outlets[0], {
+    id: "CH4", name: "Dev outlet", zone: "pit", switchEntityId: "switch.dev_outlet",
+    wattsEntityId: "sensor.dev_power", voltsEntityId: "sensor.dev_voltage", ampsEntityId: "sensor.dev_current",
+  });
+});
+
+test("requires a fresh token when redirecting a stored Home Assistant credential", () => {
+  const view = publicPitConfig(base, "config.json");
+  view.homeAssistant.baseUrl = "http://other-ha.local:8123";
+  assert.throws(() => mergePitConfigInput(view, base), /重新输入访问令牌/);
+  view.homeAssistant.accessToken = "replacement-token";
+  assert.equal(mergePitConfigInput(view, base).homeAssistant.baseUrl, "http://other-ha.local:8123");
 });

@@ -2,6 +2,7 @@ import "server-only";
 
 import { EventEmitter } from "node:events";
 import { DeviceGatewayClient } from "@/lib/device-gateway-client";
+import { CameraManager } from "@/lib/camera-manager";
 import { HomeAssistantOutletManager } from "@/lib/home-assistant-outlets";
 import { loadPitConfigFallback } from "@/lib/pit-config";
 import { ToolManager } from "@/lib/tool-manager";
@@ -28,7 +29,9 @@ export type { PitState } from "@/types/pit";
  *   pit/esp32-b/power/{ch}          → 电源通道电流/开关状态
  *   pit/esp32-b/battery/{id}        → 电池充电状态
  *   pit/esp32-b/env                 → 箱内温湿度
- *   pit/can/devices                 → 机器人 CAN 设备心跳（来自 CAN 适配器服务）
+ *   pit/can/devices                 → 机器人 CAN 设备心跳（来自 ESP32-S3 探针）
+ *   pit/can/status                  → 总线负载、帧率与控制器错误
+ *   pit/can/log                     → CAN 探针诊断事件
  *   pit/vision/scan                 → 视觉识别扫码事件
  *   pit/control/{target}            → 下行控制指令（开关/指示灯/继电器）
  */
@@ -49,6 +52,26 @@ function emptyState(): PitState {
     channels: [],
     batteries: [],
     canDevices: [],
+    canBus: {
+      probeId: "",
+      online: false,
+      bitrate: 1_000_000,
+      frameRate: 0,
+      utilizationPct: 0,
+      rxFrames: 0,
+      rxDropped: 0,
+      busErrors: 0,
+      controllerState: "unknown",
+      wifiRssi: null,
+      serialConnected: false,
+      serialBaud: 115200,
+      serialCommands: 0,
+      serialLines: 0,
+      lastSerialActivityAt: null,
+      updatedAt: 0,
+    },
+    canLog: [],
+    cameras: { mediaServerOnline: false, selectedSourceId: null, revision: 0, updatedAt: 0, sources: [] },
     env: { tempC: null, humidity: null },
     scanLog: [],
     toolStation: {
@@ -83,6 +106,7 @@ class PitHub extends EventEmitter {
   private serializedState = JSON.stringify(this.state);
   private client: DeviceGatewayClient | null = null;
   private homeAssistant: HomeAssistantOutletManager | null = null;
+  private cameras = new CameraManager();
   private tools = new ToolManager();
   private started = false;
   private updateTimer: NodeJS.Timeout | null = null;
@@ -91,6 +115,10 @@ class PitHub extends EventEmitter {
     if (this.started) return;
     this.started = true;
     this.refreshTools();
+    this.cameras.start((cameras) => {
+      this.state.cameras = cameras;
+      this.markUpdated(Date.now());
+    });
     this.queueUpdate();
     const config = loadPitConfigFallback();
     try {
@@ -165,7 +193,7 @@ class PitHub extends EventEmitter {
       this.markUpdated(now);
       return;
     }
-    if (parts[2] === "status") {
+    if (parts[2] === "status" && source !== "can") {
       const seenAt = payload.toString().trim() === "online" ? now : null;
       if (source === "esp32-a") this.state.connection.deviceLastSeen.cabinet = seenAt;
       else if (source === "esp32-b") this.state.connection.deviceLastSeen.power = seenAt;
@@ -262,7 +290,7 @@ class PitHub extends EventEmitter {
     if (parts[2] !== "tool-leds" || parts[3] !== "status") return false;
     const d = asRecord(data);
     const revision = d ? finiteNumber(d.revision, 0, Number.MAX_SAFE_INTEGER) : null;
-    if (revision === null || d?.applied !== true) return false;
+    if (revision === null || d?.applied !== true || d.drawerCount !== 5) return false;
     this.state.toolStation.appliedRevision = revision;
     return true;
   }
@@ -322,24 +350,71 @@ class PitHub extends EventEmitter {
     return true;
   }
 
-  /* 机器人 CAN（来自 USB-CAN 适配器 + TunerX 服务） */
+  /* 机器人 CAN（来自 ESP32-S3 TWAI 只监听探针） */
   private handleCan(parts: string[], data: unknown) {
-    if (parts[2] !== "devices" || !Array.isArray(data)) return false;
-    this.state.canDevices = data.slice(0, 128).filter(isRecord).flatMap((d) => {
-      const lastHeartbeat = finiteNumber(d.lastHeartbeat, 0, Number.MAX_SAFE_INTEGER);
-      if (typeof d.id !== "string" || typeof d.on !== "boolean" || lastHeartbeat === null) return [];
-      return [{
-        id: d.id,
-        name: String(d.name ?? ""),
-        model: String(d.model ?? ""),
-        mech: String(d.mech ?? ""),
-        on: d.on,
-        latencyMs: d.latencyMs == null ? null : finiteNumber(d.latencyMs, 0, 60_000),
-        tempC: d.tempC == null ? null : finiteNumber(d.tempC, -50, 200),
-        lastHeartbeat,
-      }];
-    });
-    return true;
+    if (parts[2] === "devices" && Array.isArray(data)) {
+      this.state.canDevices = data.slice(0, 128).filter(isRecord).flatMap((d) => {
+        const lastHeartbeat = finiteNumber(d.lastHeartbeat, 0, Number.MAX_SAFE_INTEGER);
+        if (typeof d.id !== "string" || typeof d.on !== "boolean" || lastHeartbeat === null) return [];
+        return [{
+          id: d.id,
+          name: String(d.name ?? ""),
+          model: String(d.model ?? ""),
+          mech: String(d.mech ?? ""),
+          on: d.on,
+          latencyMs: d.latencyMs == null ? null : finiteNumber(d.latencyMs, 0, 60_000),
+          tempC: d.tempC == null ? null : finiteNumber(d.tempC, -50, 200),
+          lastHeartbeat,
+        }];
+      });
+      return true;
+    }
+    const record = asRecord(data);
+    if (!record) return false;
+    if (parts[2] === "status") {
+      const bitrate = finiteNumber(record.bitrate, 1, 10_000_000);
+      const frameRate = finiteNumber(record.frameRate, 0, 100_000);
+      const utilizationPct = finiteNumber(record.utilizationPct, 0, 100);
+      const rxFrames = finiteNumber(record.rxFrames, 0, Number.MAX_SAFE_INTEGER);
+      const rxDropped = finiteNumber(record.rxDropped, 0, Number.MAX_SAFE_INTEGER);
+      const busErrors = finiteNumber(record.busErrors, 0, Number.MAX_SAFE_INTEGER);
+      const updatedAt = finiteNumber(record.updatedAt, 0, Number.MAX_SAFE_INTEGER);
+      const serialBaud = finiteNumber(record.serialBaud, 1200, 4_000_000);
+      const serialCommands = finiteNumber(record.serialCommands, 0, Number.MAX_SAFE_INTEGER);
+      const serialLines = finiteNumber(record.serialLines, 0, Number.MAX_SAFE_INTEGER);
+      const controllerState = String(record.controllerState ?? "unknown");
+      if (!bitrate || frameRate === null || utilizationPct === null || rxFrames === null || rxDropped === null || busErrors === null || updatedAt === null || serialBaud === null || serialCommands === null || serialLines === null) return false;
+      if (!["running", "bus-off", "stopped", "unknown"].includes(controllerState)) return false;
+      this.state.canBus = {
+        probeId: String(record.probeId ?? "").slice(0, 80),
+        online: record.online === true,
+        bitrate,
+        frameRate,
+        utilizationPct,
+        rxFrames,
+        rxDropped,
+        busErrors,
+        controllerState: controllerState as PitState["canBus"]["controllerState"],
+        wifiRssi: record.wifiRssi == null ? null : finiteNumber(record.wifiRssi, -150, 0),
+        serialConnected: record.serialConnected === true,
+        serialBaud,
+        serialCommands,
+        serialLines,
+        lastSerialActivityAt: record.lastSerialActivityAt == null ? null : finiteNumber(record.lastSerialActivityAt, 0, Number.MAX_SAFE_INTEGER),
+        updatedAt,
+      };
+      return true;
+    }
+    if (parts[2] === "log") {
+      const at = finiteNumber(record.at, 0, Number.MAX_SAFE_INTEGER);
+      const level = String(record.level ?? "info");
+      const source = record.source === "serial" ? "serial" : "system";
+      if (at === null || !["info", "warn", "error"].includes(level) || typeof record.message !== "string") return false;
+      this.state.canLog.unshift({ at, level: level as "info" | "warn" | "error", source, message: record.message.slice(0, 300) });
+      this.state.canLog = this.state.canLog.slice(0, 30);
+      return true;
+    }
+    return false;
   }
 
   /* 视觉识别扫码事件 */
@@ -352,7 +427,7 @@ class PitHub extends EventEmitter {
         if (result.duplicate) return false;
         this.refreshTools();
         this.addScanLog(
-          `${result.operation === "checkout" ? "借出" : "归还"}「${result.slot.name}」· ${result.slot.slot}`,
+          `${result.operation === "checkout" ? "借出" : "归还"}「${result.slot.name}」· ${result.slot.id} · ${result.slot.drawer}`,
           "ok",
         );
         void this.clearVisionSession(scan.stationId);
@@ -389,7 +464,7 @@ class PitHub extends EventEmitter {
 
   getToolAdminState() {
     this.refreshTools();
-    return { slots: this.tools.slots, station: this.state.toolStation };
+    return { ...this.tools.adminState, station: this.state.toolStation };
   }
 
   configureTool(input: unknown) {
@@ -400,10 +475,22 @@ class PitHub extends EventEmitter {
     return result;
   }
 
-  async startToolSession(operation: unknown) {
+  removeTool(id: unknown) {
+    const result = this.tools.remove(id);
+    this.refreshTools();
+    this.markUpdated(Date.now());
+    void this.publishToolLeds();
+    return result;
+  }
+
+  drawerForTool(id: string) {
+    return this.tools.drawerForTool(id);
+  }
+
+  async startToolSession(operation: unknown, borrower?: unknown) {
     if (!this.client?.connected) throw new Error("设备网关未连接，无法启动扫码");
     if (!this.isVisionReady()) throw new Error("Dabai DC 相机未就绪");
-    const result = this.tools.startSession(operation);
+    const result = this.tools.startSession(operation, borrower);
     this.refreshTools();
     this.markUpdated(Date.now());
     const sent = await this.publishVisionSession(result);
@@ -433,6 +520,10 @@ class PitHub extends EventEmitter {
     return this.publishToolLeds();
   }
 
+  selectCameraSource(sourceId: unknown) {
+    return this.cameras.select(sourceId);
+  }
+
   private isVisionReady() {
     const vision = this.state.toolStation.vision;
     return vision.online && vision.ready && vision.updatedAt !== null && Date.now() - vision.updatedAt < 20_000;
@@ -442,6 +533,7 @@ class PitHub extends EventEmitter {
     return this.publishTopic(`pit/control/vision/session/${this.state.toolStation.vision.stationId}`, JSON.stringify({
       sessionId: session.id,
       operation: session.operation,
+      borrower: session.borrower,
       createdAt: session.createdAt,
       expiresAt: session.expiresAt,
     }), true);

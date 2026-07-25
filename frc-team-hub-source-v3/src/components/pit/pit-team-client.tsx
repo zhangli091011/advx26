@@ -9,7 +9,7 @@ function Unconfigured({ text }: { text: string }) {
 
 export function PitTeamClient() {
   return (
-    <PitShell title="TEAM SHOWCASE" active={6}>
+    <PitShell title="TEAM SHOWCASE" active={7}>
       <section className="pit-panel" style={{ left: 224, top: 96, width: 820, height: 940, position: "absolute" }}>
         <h1 className="pit-hero-num">----</h1>
         <h2 className="pit-hero-name">战队资料未配置</h2>

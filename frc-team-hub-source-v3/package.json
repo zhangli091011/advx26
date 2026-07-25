@@ -21,6 +21,7 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "electron-updater": "^6.8.9",
+    "home-assistant-js-websocket": "^9.6.0",
     "next": "16.2.11",
     "occt-import-js": "^0.0.23",
     "react": "19.2.4",

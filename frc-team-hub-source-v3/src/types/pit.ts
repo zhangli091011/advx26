@@ -15,6 +15,7 @@ export type ToolOperation = "checkout" | "return";
 export interface ToolSession {
   id: string;
   operation: ToolOperation;
+  borrower: string | null;
   createdAt: number;
   expiresAt: number;
 }
@@ -24,6 +25,7 @@ export interface ToolTransaction {
   slot: string;
   name: string;
   operation: ToolOperation;
+  borrower: string | null;
   createdAt: number;
 }
 
@@ -72,7 +74,7 @@ export interface PowerChannel {
   watts: number | null;
   on: boolean;
   provider: "gateway" | "home-assistant";
-  transport: "rest" | null;
+  transport: "rest" | "websocket" | null;
   online: boolean;
   updatedAt: number;
   model?: string;
@@ -94,6 +96,50 @@ export interface CanDevice {
   latencyMs: number | null;
   tempC: number | null;
   lastHeartbeat: number;
+}
+
+export interface CanBusStatus {
+  probeId: string;
+  online: boolean;
+  bitrate: number;
+  frameRate: number;
+  utilizationPct: number;
+  rxFrames: number;
+  rxDropped: number;
+  busErrors: number;
+  controllerState: "running" | "bus-off" | "stopped" | "unknown";
+  wifiRssi: number | null;
+  serialConnected: boolean;
+  serialBaud: number;
+  serialCommands: number;
+  serialLines: number;
+  lastSerialActivityAt: number | null;
+  updatedAt: number;
+}
+
+export interface CanLogEntry {
+  at: number;
+  level: "info" | "warn" | "error";
+  source: "system" | "serial";
+  message: string;
+}
+
+export interface CameraSource {
+  id: string;
+  label: string;
+  online: boolean;
+  readers: number;
+  bytesReceived: number;
+  tracks: string[];
+  updatedAt: number;
+}
+
+export interface CameraState {
+  mediaServerOnline: boolean;
+  selectedSourceId: string | null;
+  revision: number;
+  updatedAt: number;
+  sources: CameraSource[];
 }
 
 export interface PitConnection {
@@ -119,6 +165,9 @@ export interface PitState {
   channels: PowerChannel[];
   batteries: Battery[];
   canDevices: CanDevice[];
+  canBus: CanBusStatus;
+  canLog: CanLogEntry[];
+  cameras: CameraState;
   env: { tempC: number | null; humidity: number | null };
   scanLog: Array<{ t: string; msg: string; kind: "ok" | "warn" | "err" }>;
   toolStation: ToolStationState;

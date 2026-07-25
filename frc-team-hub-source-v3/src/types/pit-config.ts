@@ -36,7 +36,8 @@ export type PitConfigView = {
 export type PitConfigTestResult = {
   ok: boolean;
   target: string;
-  transport?: "rest";
+  transport?: "rest" | "websocket";
+  version?: string;
   latencyMs: number;
   message: string;
 };
@@ -48,4 +49,12 @@ export type DiscoveredHomeAssistantOutlet = {
   wattsEntityId: string;
   voltsEntityId: string;
   ampsEntityId: string;
+  areaId: string;
+  areaName: string;
+  deviceName: string;
+  manufacturer: string;
+  model: string;
+  platform: string;
 };
+
+export type DiscoveredHomeAssistantArea = { areaId: string; name: string };

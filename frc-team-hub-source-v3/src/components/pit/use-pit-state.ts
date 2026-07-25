@@ -93,3 +93,13 @@ export async function pitControl(action: string, target: string, on?: boolean) {
   const result = await response.json().catch(() => null) as { error?: string } | null;
   if (!response.ok) throw new Error(result?.error ?? "控制指令发送失败");
 }
+
+export async function sendCanSerialCommand(command: string) {
+  const response = await fetch("/api/pit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "can-serial", target: "main", command }),
+  });
+  const result = await response.json().catch(() => null) as { error?: string } | null;
+  if (!response.ok) throw new Error(result?.error ?? "串口调试指令发送失败");
+}

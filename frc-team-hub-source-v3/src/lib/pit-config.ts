@@ -42,6 +42,9 @@ export function savePitConfig(config: StoredPitConfig) {
       const existing = JSON.parse(fs.readFileSync(filePath, "utf8")) as { version?: unknown };
       const backup = path.join(directory, "pit-config.legacy.backup.json");
       if (existing.version !== 3 && !fs.existsSync(backup)) fs.copyFileSync(filePath, backup);
+      const previous = path.join(directory, "pit-config.previous.backup.json");
+      fs.copyFileSync(filePath, previous);
+      fs.chmodSync(previous, 0o600);
     } catch {
       // The regular save path will replace an invalid file only after validated input is available.
     }

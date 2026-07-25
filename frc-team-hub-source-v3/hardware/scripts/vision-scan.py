@@ -2,14 +2,15 @@
 """Dabai DC QR scanner using the PIT-OS WebSocket device gateway."""
 import json
 import os
+import queue
 import signal
+import subprocess
 import threading
 import time
 import uuid
 
 import cv2
 import websocket
-from pyzbar.pyzbar import decode
 
 GATEWAY_URL = os.environ.get("PIT_GATEWAY_URL", "ws://127.0.0.1:8765")
 GATEWAY_TOKEN = os.environ.get("PIT_GATEWAY_TOKEN", "")
@@ -19,6 +20,9 @@ CAMERA_WIDTH = int(os.environ.get("PIT_CAMERA_WIDTH", "1280"))
 CAMERA_HEIGHT = int(os.environ.get("PIT_CAMERA_HEIGHT", "720"))
 CAMERA_FPS = int(os.environ.get("PIT_CAMERA_FPS", "30"))
 DEBOUNCE_SEC = float(os.environ.get("PIT_SCAN_DEBOUNCE_SEC", "2"))
+RTMP_URL = os.environ.get("PIT_CAMERA_RTMP_URL", "").strip()
+RTMP_FPS = max(1, int(os.environ.get("PIT_CAMERA_RTMP_FPS", "15")))
+RTMP_BITRATE = os.environ.get("PIT_CAMERA_RTMP_BITRATE", "1800k").strip()
 
 SESSION_CHANNEL = f"pit/control/vision/session/{STATION_ID}"
 STATUS_CHANNEL = f"pit/vision/status/{STATION_ID}"
@@ -88,6 +92,83 @@ class Gateway:
             self.socket.close()
 
 
+class FrameStreamer:
+    def __init__(self):
+        self.running = bool(RTMP_URL)
+        self.frames = queue.Queue(maxsize=1)
+        self.process = None
+        self.last_submitted_at = 0.0
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        if self.running:
+            self.thread.start()
+
+    def submit(self, frame):
+        if not self.running:
+            return
+        now = time.monotonic()
+        if now - self.last_submitted_at < 1.0 / RTMP_FPS:
+            return
+        self.last_submitted_at = now
+        try:
+            self.frames.put_nowait(frame.copy())
+        except queue.Full:
+            try:
+                self.frames.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                self.frames.put_nowait(frame.copy())
+            except queue.Full:
+                pass
+
+    def _run(self):
+        while self.running:
+            try:
+                frame = self.frames.get(timeout=1)
+            except queue.Empty:
+                continue
+            if self.process is None or self.process.poll() is not None:
+                self._start(frame.shape[1], frame.shape[0])
+            if self.process is None:
+                time.sleep(2)
+                continue
+            try:
+                self.process.stdin.write(frame.tobytes())
+            except (BrokenPipeError, OSError, AttributeError):
+                self._stop_process()
+
+    def _start(self, width, height):
+        command = [
+            "ffmpeg", "-hide_banner", "-loglevel", "warning", "-f", "rawvideo", "-pix_fmt", "bgr24",
+            "-s", f"{width}x{height}", "-r", str(RTMP_FPS), "-i", "-", "-an", "-c:v", "libx264",
+            "-preset", "ultrafast", "-tune", "zerolatency", "-profile:v", "baseline", "-g", str(RTMP_FPS),
+            "-keyint_min", str(RTMP_FPS), "-b:v", RTMP_BITRATE, "-maxrate", RTMP_BITRATE,
+            "-bufsize", RTMP_BITRATE, "-pix_fmt", "yuv420p", "-f", "flv", RTMP_URL,
+        ]
+        try:
+            self.process = subprocess.Popen(command, stdin=subprocess.PIPE)
+            print(f"[vision] RTMP publisher started: {RTMP_URL.rsplit('/', 1)[-1]}", flush=True)
+        except OSError as error:
+            print(f"[vision] RTMP unavailable: {error}", flush=True)
+            self.process = None
+
+    def _stop_process(self):
+        if self.process is None:
+            return
+        try:
+            if self.process.stdin:
+                self.process.stdin.close()
+            self.process.terminate()
+            self.process.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            self.process.kill()
+        self.process = None
+
+    def close(self):
+        self.running = False
+        self._stop_process()
+
+
 class Scanner:
     def __init__(self):
         if not STATION_ID or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for char in STATION_ID):
@@ -97,6 +178,8 @@ class Scanner:
         self.session = None
         self.last_seen = {}
         self.last_status_at = 0.0
+        self.detector = cv2.QRCodeDetector()
+        self.streamer = FrameStreamer()
         self.gateway = Gateway(self.on_event)
 
     def status_payload(self, online, ready, error=None, width=None, height=None):
@@ -175,12 +258,15 @@ class Scanner:
                 continue
             if time.monotonic() - self.last_status_at >= 10:
                 self.publish_status(True, width=int(frame.shape[1]), height=int(frame.shape[0]))
+            self.streamer.submit(frame)
             if not self.session:
                 time.sleep(0.03)
                 continue
             now = time.monotonic()
-            for code in decode(frame):
-                qr = code.data.decode("utf-8", errors="ignore").strip()
+            found, decoded, _points, _straight = self.detector.detectAndDecodeMulti(frame)
+            codes = decoded if found else [self.detector.detectAndDecode(frame)[0]]
+            for value in codes:
+                qr = value.strip()
                 if not qr or now - self.last_seen.get(qr, 0) < DEBOUNCE_SEC:
                     continue
                 self.last_seen[qr] = now
@@ -191,6 +277,7 @@ class Scanner:
     def close(self):
         if self.capture is not None:
             self.capture.release()
+        self.streamer.close()
         self.gateway.publish(STATUS_CHANNEL, self.status_payload(False, False, "service stopped"), True)
         self.gateway.close()
 

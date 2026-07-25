@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Panel, PitShell } from "@/components/pit/pit-shell";
-import type { DiscoveredHomeAssistantOutlet, HomeAssistantOutletInput, PitConfigTestResult, PitConfigView } from "@/types/pit-config";
+import type { DiscoveredHomeAssistantArea, DiscoveredHomeAssistantOutlet, HomeAssistantOutletInput, PitConfigTestResult, PitConfigView } from "@/types/pit-config";
 
 type DesktopWindow = Window & { pitDesktop?: { restartApplication(): Promise<void> } };
 
@@ -40,6 +40,8 @@ export function PitSettingsClient() {
   const [testing, setTesting] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [devices, setDevices] = useState<DiscoveredHomeAssistantOutlet[] | null>(null);
+  const [areas, setAreas] = useState<DiscoveredHomeAssistantArea[]>([]);
+  const [areaFilter, setAreaFilter] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -70,7 +72,7 @@ export function PitSettingsClient() {
   async function runTest(target: string) {
     setTesting(target);
     try {
-      const response = await fetch("/api/pit/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target }) });
+      const response = await fetch("/api/pit/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target, config }) });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error ?? "测试失败");
       setTestResults((current) => ({ ...current, [target]: result.data }));
@@ -85,15 +87,13 @@ export function PitSettingsClient() {
     setDiscovering(true);
     setMessage("");
     try {
-      const savedResponse = await fetch("/api/pit/config", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(config) });
-      const saved = await savedResponse.json();
-      if (!savedResponse.ok || !saved.ok) throw new Error(saved.error ?? "请先保存 Home Assistant 配置");
-      setConfig(saved.data);
-      const response = await fetch("/api/pit/config/discover", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const response = await fetch("/api/pit/config/discover", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ config }) });
       const result = await response.json();
       if (!response.ok || !result.ok) throw new Error(result.error ?? "获取 Home Assistant 实体失败");
       setDevices(result.data.devices);
-      setMessage(result.data.devices.length ? `发现 ${result.data.devices.length} 个可导入开关实体` : "未发现可导入开关实体");
+      setAreas(result.data.areas ?? []);
+      setAreaFilter("");
+      setMessage(result.data.devices.length ? `Home Assistant ${result.data.version} · 发现 ${result.data.devices.length} 个可导入开关实体` : "未发现可导入开关实体");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "获取 Home Assistant 实体失败");
     } finally {
@@ -106,23 +106,18 @@ export function PitSettingsClient() {
     const used = new Set(config.homeAssistant.outlets.filter((outlet) => outlet.switchEntityId).map((outlet) => outlet.id));
     const channelId = unbound ?? Array.from({ length: 8 }, (_, index) => `CH${index + 1}`).find((item) => !used.has(item));
     if (!channelId) return setMessage("CH1-CH8 已全部使用，请先删除一个通道");
-    setDiscovering(true);
-    try {
-      const response = await fetch("/api/pit/config/discover", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import", entityId: device.entityId, channelId }),
-      });
-      const result = await response.json();
-      if (!response.ok || !result.ok) throw new Error(result.error ?? "导入实体失败");
-      setConfig(result.data);
-      setDevices((current) => current?.filter((item) => item.entityId !== device.entityId) ?? null);
-      setMessage(`${device.name} 已导入到 ${channelId}，重启后生效`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "导入实体失败");
-    } finally {
-      setDiscovering(false);
-    }
+    const outlet = {
+      id: channelId,
+      name: device.deviceName || device.name,
+      zone: device.areaName || "Home Assistant",
+      switchEntityId: device.entityId,
+      wattsEntityId: device.wattsEntityId,
+      voltsEntityId: device.voltsEntityId,
+      ampsEntityId: device.ampsEntityId,
+    };
+    setConfig((current) => ({ ...current, homeAssistant: { ...current.homeAssistant, outlets: [...current.homeAssistant.outlets.filter((item) => item.id !== channelId), outlet] } }));
+    setDevices((current) => current?.filter((item) => item.entityId !== device.entityId) ?? null);
+    setMessage(`${device.name} 已加入 ${channelId} 草稿，请保存全部配置`);
   }
 
   function updateOutlet(index: number, patch: Partial<HomeAssistantOutletInput>) {
@@ -143,7 +138,7 @@ export function PitSettingsClient() {
   }
 
   return (
-    <PitShell title="TEST & CONFIG MANAGEMENT" active={7}>
+    <PitShell title="TEST & CONFIG MANAGEMENT" active={9}>
       <Panel x={224} y={96} w={360} h={420} title="赛队配置" en="TEAM IDENTITY">
         <div className="pit-settings-team">
           <Field label="FRC 队号" type="number" value={String(config.team.number)} onChange={(number) => setConfig({ ...config, team: { ...config.team, number: Number(number) } })} />
@@ -166,11 +161,11 @@ export function PitSettingsClient() {
         </div>
       </Panel>
 
-      <Panel x={1016} y={96} w={480} h={420} title="Home Assistant" en="REST API">
+      <Panel x={1016} y={96} w={480} h={420} title="Home Assistant" en="WEBSOCKET">
         <div className="pit-settings-form">
           <Field label="HA URL" value={config.homeAssistant.baseUrl} onChange={(baseUrl) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, baseUrl } })} />
           <SecretField label="长期访问令牌" value={config.homeAssistant.accessToken} configured={config.homeAssistant.accessTokenConfigured} clear={config.homeAssistant.clearAccessToken === true} onChange={(accessToken) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, accessToken, clearAccessToken: false } })} onClear={(clearAccessToken) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, clearAccessToken } })} />
-          <Field label="轮询间隔 ms" type="number" value={String(config.homeAssistant.pollIntervalMs)} onChange={(value) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, pollIntervalMs: Number(value) } })} />
+          <Field label="兼容间隔 ms（WebSocket 不使用）" type="number" value={String(config.homeAssistant.pollIntervalMs)} onChange={(value) => setConfig({ ...config, homeAssistant: { ...config.homeAssistant, pollIntervalMs: Number(value) } })} />
           <button className="pit-settings-discover" type="button" disabled={discovering || loading} onClick={() => void discoverDevices()}>{discovering ? "正在读取 HA 实体..." : "一键发现 HA 插座"}</button>
           {config.homeAssistant.migrationRequired ? <p>检测到旧小米配置，请重新绑定 Home Assistant 实体。</p> : null}
         </div>
@@ -187,7 +182,7 @@ export function PitSettingsClient() {
         </div>
       </Panel>
 
-      <Panel x={224} y={532} w={1656} h={504} title="Home Assistant 电源通道" en="HA OUTLETS · REST">
+      <Panel x={224} y={532} w={1656} h={504} title="Home Assistant 电源通道" en="HA OUTLETS · REALTIME">
         <button className="pit-settings-add" type="button" onClick={addOutlet}>+ 添加通道</button>
         <div className="pit-settings-outlets">
           {config.homeAssistant.outlets.map((outlet, index) => <OutletCard key={`${outlet.id}-${index}`} outlet={outlet} index={index} testing={testing} result={testResults[outlet.id]} onChange={updateOutlet} onRemove={() => setConfig((current) => ({ ...current, homeAssistant: { ...current.homeAssistant, outlets: current.homeAssistant.outlets.filter((_, itemIndex) => itemIndex !== index) } }))} onTest={runTest} />)}
@@ -195,7 +190,7 @@ export function PitSettingsClient() {
         </div>
       </Panel>
 
-      {devices ? <div className="pit-discovery-backdrop" role="dialog" aria-modal="true" aria-label="Home Assistant 插座发现结果"><section className="pit-discovery-dialog"><header><strong>发现 Home Assistant 开关实体</strong><span>功率、电压和电流传感器会按实体名称自动匹配</span><button type="button" onClick={() => setDevices(null)}>关闭</button></header><div className="pit-discovery-list">{devices.map((device) => <article key={device.entityId}><i className={device.available ? "online" : ""} /><div><strong>{device.name}</strong><span>{device.entityId}</span></div><code>{device.wattsEntityId || "未匹配功率传感器"}</code><small>{device.available ? "可用" : "当前不可用"}</small><button type="button" disabled={discovering} onClick={() => void importDevice(device)}>导入下一通道</button></article>)}{devices.length === 0 ? <p>没有可导入开关实体。</p> : null}</div></section></div> : null}
+      {devices ? <div className="pit-discovery-backdrop" role="dialog" aria-modal="true" aria-label="Home Assistant 插座发现结果"><section className="pit-discovery-dialog"><header><strong>发现 Home Assistant 开关实体</strong><select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)}><option value="">全部区域</option>{areas.map((area) => <option key={area.areaId} value={area.areaId}>{area.name}</option>)}</select><button type="button" onClick={() => setDevices(null)}>关闭</button></header><div className="pit-discovery-list">{devices.filter((device) => !areaFilter || device.areaId === areaFilter).map((device) => <article key={device.entityId}><i className={device.available ? "online" : ""} /><div><strong>{device.deviceName || device.name}</strong><span>{device.areaName || "未分配区域"} · {device.entityId}</span></div><code>{device.wattsEntityId || "未匹配功率传感器"}</code><small>{[device.manufacturer, device.model, device.platform].filter(Boolean).join(" · ") || (device.available ? "可用" : "当前不可用")}</small><button type="button" disabled={discovering} onClick={() => void importDevice(device)}>加入下一通道</button></article>)}{devices.length === 0 ? <p>没有可导入开关实体。</p> : null}</div></section></div> : null}
     </PitShell>
   );
 }
@@ -213,5 +208,5 @@ function SecretField({ label, value, configured, clear, onChange, onClear }: { l
 }
 
 function TestButton({ target, testing, result, onTest }: { target: string; testing: string | null; result?: PitConfigTestResult; onTest(target: string): void }) {
-  return <div className="pit-settings-test"><button type="button" disabled={testing !== null} onClick={() => onTest(target)}>{testing === target ? "测试中..." : "连接测试"}</button>{result ? <span className={result.ok ? "ok" : "error"}>{result.message} · {result.latencyMs}ms</span> : <span>请先保存，再执行测试</span>}</div>;
+  return <div className="pit-settings-test"><button type="button" disabled={testing !== null} onClick={() => onTest(target)}>{testing === target ? "测试中..." : "连接测试"}</button>{result ? <span className={result.ok ? "ok" : "error"}>{result.message} · {result.latencyMs}ms</span> : <span>使用当前草稿测试，不会保存</span>}</div>;
 }

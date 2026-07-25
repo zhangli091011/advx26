@@ -37,7 +37,8 @@ export function validateHomeAssistantUrl(value: string) {
   try {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-    return url.toString().replace(/\/$/, "");
+    if (url.username || url.password) throw new Error();
+    return url.origin;
   } catch {
     throw new Error("Home Assistant URL 必须是有效的 HTTP 或 HTTPS 地址");
   }

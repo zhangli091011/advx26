@@ -1,15 +1,74 @@
 import "server-only";
 
-import { HomeAssistantClient } from "@/lib/home-assistant-client";
+import type { HassEntity } from "home-assistant-js-websocket";
+import { createHomeAssistantConnection, withTimeout } from "@/lib/home-assistant-connection";
 import type { HomeAssistantOutletConfig } from "@/lib/home-assistant-config";
-import { discoverOutletsFromStates, type DiscoveredHomeAssistantOutlet } from "@/lib/home-assistant-model";
+import { discoverOutletsFromStates } from "@/lib/home-assistant-model";
 import type { StoredPitConfig } from "@/lib/pit-config-model";
+import type { DiscoveredHomeAssistantArea, DiscoveredHomeAssistantOutlet } from "@/types/pit-config";
 
-export type { DiscoveredHomeAssistantOutlet } from "@/lib/home-assistant-model";
+type RegistryEntity = { ei?: string; pl?: string; ai?: string; di?: string };
+type RegistryDevice = { id?: string; name?: string; name_by_user?: string; area_id?: string; manufacturer?: string; model?: string };
+type RegistryArea = { area_id?: string; name?: string };
 
-export async function discoverHomeAssistantOutlets(config: StoredPitConfig) {
-  const states = await client(config).getStates();
-  return discoverOutletsFromStates(states);
+export type HomeAssistantDiscoveryResult = {
+  version: string;
+  areas: DiscoveredHomeAssistantArea[];
+  devices: DiscoveredHomeAssistantOutlet[];
+};
+
+export async function discoverHomeAssistantOutlets(config: StoredPitConfig): Promise<HomeAssistantDiscoveryResult> {
+  const connection = await createHomeAssistantConnection(config.homeAssistant);
+  try {
+    const [statesRecord, areaEntries, deviceEntries, registryResult] = await withTimeout(Promise.all([
+      connection.sendMessagePromise<HassEntity[]>({ type: "get_states" }),
+      connection.sendMessagePromise<RegistryArea[]>({ type: "config/area_registry/list" }),
+      connection.sendMessagePromise<RegistryDevice[]>({ type: "config/device_registry/list" }),
+      connection.sendMessagePromise<{ entities?: RegistryEntity[] }>({ type: "config/entity_registry/list_for_display" }),
+    ]), 10_000, "Home Assistant 设备发现超时");
+
+    const areas = areaEntries.flatMap((area) => {
+      const areaId = text(area.area_id);
+      const name = text(area.name);
+      return areaId && name ? [{ areaId, name }] : [];
+    }).sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+    const areaMap = new Map(areas.map((area) => [area.areaId, area.name]));
+    const devices = new Map(deviceEntries.flatMap((device) => {
+      const id = text(device.id);
+      return id ? [[id, device] as const] : [];
+    }));
+    const registry = new Map((registryResult.entities ?? []).flatMap((entity) => {
+      const entityId = text(entity.ei);
+      return entityId ? [[entityId, entity] as const] : [];
+    }));
+    const states = statesRecord.map((state) => ({
+      entity_id: state.entity_id,
+      state: state.state,
+      attributes: state.attributes,
+      last_updated: state.last_updated,
+    }));
+
+    return {
+      version: connection.haVersion,
+      areas,
+      devices: discoverOutletsFromStates(states).map((outlet) => {
+        const entity = registry.get(outlet.entityId);
+        const device = devices.get(text(entity?.di));
+        const areaId = text(entity?.ai) || text(device?.area_id);
+        return {
+          ...outlet,
+          areaId,
+          areaName: areaMap.get(areaId) ?? "",
+          deviceName: text(device?.name_by_user) || text(device?.name),
+          manufacturer: text(device?.manufacturer),
+          model: text(device?.model),
+          platform: text(entity?.pl),
+        };
+      }),
+    };
+  } finally {
+    connection.close();
+  }
 }
 
 export function importHomeAssistantOutlet(
@@ -23,8 +82,8 @@ export function importHomeAssistantOutlet(
   if (existing?.switchEntityId) throw new Error(`${channelId} 已被其他插座占用`);
   return {
     id: channelId,
-    name: discovered.name,
-    zone: existing?.zone || "Home Assistant",
+    name: discovered.deviceName || discovered.name,
+    zone: discovered.areaName || existing?.zone || "Home Assistant",
     switchEntityId: discovered.entityId,
     wattsEntityId: discovered.wattsEntityId || undefined,
     voltsEntityId: discovered.voltsEntityId || undefined,
@@ -32,6 +91,6 @@ export function importHomeAssistantOutlet(
   };
 }
 
-function client(config: StoredPitConfig) {
-  return new HomeAssistantClient(config.homeAssistant.baseUrl, config.homeAssistant.accessToken);
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }

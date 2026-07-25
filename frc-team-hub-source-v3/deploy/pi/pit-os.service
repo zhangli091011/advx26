@@ -1,13 +1,15 @@
 [Unit]
 Description=ADVX PIT OS Next.js server
-After=network-online.target pit-device-gateway.service
+After=network-online.target pit-device-gateway.service pit-media.service
 Requires=pit-device-gateway.service
 Wants=network-online.target
+Wants=pit-media.service
 
 [Service]
 Type=simple
 User=pit-os
 Group=pit-os
+SupplementaryGroups=video
 WorkingDirectory=/opt/pit-os/current
 Environment=NODE_ENV=production
 Environment=HOSTNAME=127.0.0.1

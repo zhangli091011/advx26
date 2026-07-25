@@ -30,8 +30,9 @@ export async function PUT(request: Request) {
 export async function POST(request: Request) {
   if (!isSameOrigin(request)) return apiError("禁止跨站测试请求", 403);
   try {
-    const body = await request.json() as { target?: unknown };
-    const config = loadPitConfig();
+    const body = await request.json() as { target?: unknown; config?: unknown };
+    const current = loadPitConfig();
+    const config = body.config === undefined ? current : mergePitConfigInput(body.config, current);
     if (body.target === "gateway") return apiSuccess(await testGatewayConfig(config));
     if (typeof body.target === "string" && /^CH[1-8]$/.test(body.target)) {
       return apiSuccess(await testHomeAssistantConfig(config, body.target));

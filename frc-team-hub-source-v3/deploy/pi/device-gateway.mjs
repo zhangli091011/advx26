@@ -16,10 +16,10 @@ const permissions = {
     subscribe: ["pit/esp32-a/", "pit/esp32-b/", "pit/can/", "pit/vision/", "pit/toolbox/"],
   },
   vision: { publish: ["pit/vision/"], subscribe: ["pit/control/vision/session/"] },
-  can: { publish: ["pit/can/"], subscribe: [] },
+  can: { publish: ["pit/can/"], subscribe: ["pit/control/can/"] },
   cabinet: { publish: ["pit/esp32-a/"], subscribe: ["pit/control/locate/", "pit/control/locate-unit/"] },
   power: { publish: ["pit/esp32-b/"], subscribe: ["pit/control/power/"] },
-  toolbox: { publish: ["pit/toolbox/"], subscribe: ["pit/control/toolbox/", "pit/control/locate/"] },
+  toolbox: { publish: ["pit/toolbox/"], subscribe: ["pit/control/toolbox/"] },
 };
 
 function matches(channel, pattern) {

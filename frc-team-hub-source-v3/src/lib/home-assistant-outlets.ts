@@ -1,8 +1,9 @@
 import "server-only";
 
-import { HomeAssistantClient, type HomeAssistantState } from "@/lib/home-assistant-client";
+import { callService, subscribeEntities, type Connection, type HassEntities } from "home-assistant-js-websocket";
+import { createHomeAssistantConnection, withTimeout } from "@/lib/home-assistant-connection";
 import type { HomeAssistantOutletConfig } from "@/lib/home-assistant-config";
-import { isAvailable, measurement } from "@/lib/home-assistant-model";
+import { isAvailable, measurement, type HomeAssistantState } from "@/lib/home-assistant-model";
 import type { StoredPitConfig } from "@/lib/pit-config-model";
 import type { PowerChannel } from "@/types/pit";
 
@@ -10,24 +11,23 @@ type OutletUpdate = (channel: PowerChannel) => void;
 
 export class HomeAssistantOutletManager {
   readonly configs: HomeAssistantOutletConfig[];
-  private readonly client: HomeAssistantClient;
-  private readonly pollIntervalMs: number;
-  private pollTimer: NodeJS.Timeout | null = null;
-  private pollPromise: Promise<void> | null = null;
+  private readonly config: StoredPitConfig["homeAssistant"];
+  private connection: Connection | null = null;
+  private states = new Map<string, HomeAssistantState>();
+  private unsubscribe: (() => void) | null = null;
   private update: OutletUpdate | null = null;
+  private stopped = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(config: StoredPitConfig["homeAssistant"]) {
+    this.config = config;
     this.configs = config.outlets.filter((outlet) => outlet.switchEntityId);
-    this.client = new HomeAssistantClient(config.baseUrl, config.accessToken);
-    this.pollIntervalMs = config.pollIntervalMs;
   }
 
   start(update: OutletUpdate) {
-    if (!this.configs.length || this.pollTimer) return;
+    if (!this.configs.length || this.connection || this.stopped) return;
     this.update = update;
-    void this.pollAll();
-    this.pollTimer = setInterval(() => void this.pollAll(), this.pollIntervalMs);
-    this.pollTimer.unref();
+    void this.connect();
   }
 
   hasChannel(id: string) {
@@ -36,76 +36,93 @@ export class HomeAssistantOutletManager {
 
   async setPower(id: string, on: boolean) {
     const config = this.requireConfig(id);
-    await this.client.callSwitch(config.switchEntityId, on);
-    await this.pollOne(config);
-    return "rest" as const;
+    if (!this.connection?.connected) throw new Error("Home Assistant 未连接");
+    const state = this.states.get(config.switchEntityId);
+    if (!state || !isAvailable(state)) throw new Error(`${config.switchEntityId} 当前不可用`);
+    await withTimeout(callService(
+      this.connection,
+      "switch",
+      on ? "turn_on" : "turn_off",
+      undefined,
+      { entity_id: config.switchEntityId },
+    ), 5_000, "Home Assistant 控制超时");
+    return "websocket" as const;
   }
 
   async testConnection(id: string) {
     const config = this.requireConfig(id);
-    const states = await this.client.getStates();
-    const state = states.find((item) => item.entity_id === config.switchEntityId);
-    if (!state) throw new Error(`Home Assistant 中未找到 ${config.switchEntityId}`);
-    if (!isAvailable(state)) throw new Error(`${config.switchEntityId} 当前不可用`);
-    return "rest" as const;
-  }
-
-  destroy() {
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    this.pollTimer = null;
-  }
-
-  private async pollAll() {
-    if (this.pollPromise) return this.pollPromise;
-    this.pollPromise = this.client.getStates()
-      .then((states) => Promise.all(this.configs.map((config) => this.emitChannel(config, states))))
-      .then(() => undefined)
-      .catch(() => Promise.all(this.configs.map((config) => this.emitOffline(config))).then(() => undefined))
-      .finally(() => { this.pollPromise = null; });
-    return this.pollPromise;
-  }
-
-  private async pollOne(config: HomeAssistantOutletConfig) {
+    const connection = await createHomeAssistantConnection(this.config);
     try {
-      await this.emitChannel(config, await this.client.getStates());
-    } catch {
-      await this.emitOffline(config);
+      const states = await withTimeout(
+        connection.sendMessagePromise<HomeAssistantState[]>({ type: "get_states" }),
+        5_000,
+        "Home Assistant 状态读取超时",
+      );
+      const state = states.find((item) => item.entity_id === config.switchEntityId);
+      if (!state) throw new Error(`Home Assistant 中未找到 ${config.switchEntityId}`);
+      if (!isAvailable(state)) throw new Error(`${config.switchEntityId} 当前不可用`);
+      return "websocket" as const;
+    } finally {
+      connection.close();
     }
   }
 
-  private async emitChannel(config: HomeAssistantOutletConfig, states: HomeAssistantState[]) {
-    const byId = new Map(states.map((state) => [state.entity_id, state]));
-    const switchState = byId.get(config.switchEntityId);
-    if (!switchState || !isAvailable(switchState)) return this.emitOffline(config);
-    const now = Date.now();
-    this.update?.({
-      id: config.id,
-      name: config.name,
-      zone: config.zone,
-      provider: "home-assistant",
-      transport: "rest",
-      online: true,
-      on: switchState.state === "on",
-      watts: measurement(byId.get(config.wattsEntityId ?? ""), "watts"),
-      volts: measurement(byId.get(config.voltsEntityId ?? ""), "volts"),
-      amps: measurement(byId.get(config.ampsEntityId ?? ""), "amps"),
-      updatedAt: now,
-    });
+  destroy() {
+    this.stopped = true;
+    this.unsubscribe?.();
+    this.unsubscribe = null;
+    this.connection?.close();
+    this.connection = null;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.states.clear();
   }
 
-  private async emitOffline(config: HomeAssistantOutletConfig) {
+  private async connect() {
+    try {
+      const connection = await createHomeAssistantConnection(this.config);
+      if (this.stopped) return connection.close();
+      this.connection = connection;
+      connection.addEventListener("disconnected", () => this.markOffline());
+      connection.addEventListener("reconnect-error", () => this.markOffline());
+      this.unsubscribe = subscribeEntities(connection, (states) => this.receiveStates(states));
+    } catch (error) {
+      this.markOffline();
+      console.error(`[home-assistant] ${error instanceof Error ? error.message : String(error)}`);
+      if (this.stopped) return;
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        void this.connect();
+      }, 5_000);
+      this.reconnectTimer.unref();
+    }
+  }
+
+  private receiveStates(states: HassEntities) {
+    this.states = new Map(Object.values(states).map((state) => [state.entity_id, state]));
+    for (const config of this.configs) this.emitChannel(config, true);
+  }
+
+  private markOffline() {
+    this.states.clear();
+    for (const config of this.configs) this.emitChannel(config, false);
+  }
+
+  private emitChannel(config: HomeAssistantOutletConfig, connected: boolean) {
+    const switchState = this.states.get(config.switchEntityId);
+    const online = connected && Boolean(switchState && isAvailable(switchState) && ["on", "off"].includes(switchState.state));
     this.update?.({
       id: config.id,
       name: config.name,
       zone: config.zone,
       provider: "home-assistant",
-      transport: null,
-      online: false,
-      on: false,
-      watts: null,
-      volts: null,
-      amps: null,
-      updatedAt: 0,
+      transport: online ? "websocket" : null,
+      online,
+      on: online && switchState?.state === "on",
+      watts: measurement(this.states.get(config.wattsEntityId ?? ""), "watts"),
+      volts: measurement(this.states.get(config.voltsEntityId ?? ""), "volts"),
+      amps: measurement(this.states.get(config.ampsEntityId ?? ""), "amps"),
+      updatedAt: online ? Date.now() : 0,
     });
   }
 

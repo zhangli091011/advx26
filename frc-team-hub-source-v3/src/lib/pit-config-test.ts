@@ -32,7 +32,7 @@ export async function testHomeAssistantConfig(config: StoredPitConfig, channelId
   const manager = new HomeAssistantOutletManager(config.homeAssistant);
   try {
     const transport = await manager.testConnection(channelId);
-    return { ok: true, target: channelId, transport, latencyMs: Date.now() - startedAt, message: "Home Assistant 插座连接成功（REST）" };
+    return { ok: true, target: channelId, transport, latencyMs: Date.now() - startedAt, message: "Home Assistant 插座连接成功（WebSocket）" };
   } catch (error) {
     return {
       ok: false,

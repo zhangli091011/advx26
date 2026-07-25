@@ -30,9 +30,11 @@ const NAV_ITEMS = [
   { zh: "工具管理", en: "TOOLS", href: "/pit/tools", icon: "tool" },
   { zh: "零件库存", en: "PARTS", href: "/pit/parts", icon: "part" },
   { zh: "CAN 监控", en: "CAN BUS", href: "/pit/can", icon: "can" },
+  { zh: "相机切换", en: "CAMERA", href: "/pit/cameras", icon: "camera" },
   { zh: "赛事信息", en: "MATCH", href: "/pit/match", icon: "match" },
   { zh: "电源控制", en: "POWER", href: "/pit/power", icon: "power" },
   { zh: "战队展示", en: "TEAM", href: "/pit/team", icon: "team" },
+  { zh: "系统性能", en: "SYSTEM", href: "/pit/system", icon: "system" },
   { zh: "测试管理", en: "SETTINGS", href: "/pit/settings", icon: "settings" },
 ];
 
@@ -50,9 +52,11 @@ function NavIcon({ kind, active }: { kind: string; active: boolean }) {
       {kind === "tool" && <>{rect(2, 8, 16, 4, -45)}{rect(8, 6, 4, 10, -45)}</>}
       {kind === "part" && <>{ring(10, 10, 6)}{rect(7, 7, 6, 6)}</>}
       {kind === "can" && <>{rect(1, 2, 18, 3)}{rect(1, 4, 3, 14)}{rect(16, 4, 3, 14)}{rect(1, 17, 18, 3)}</>}
+      {kind === "camera" && <>{rect(1, 4, 13, 12)}<polygon points="14,7 20,3 20,17 14,13" fill={c} />{ring(7.5, 10, 3)}</>}
       {kind === "match" && <>{rect(1, 1, 18, 10)}{rect(7, 14, 6, 3)}{rect(1, 8, 3, 6)}{rect(16, 8, 3, 6)}</>}
       {kind === "power" && <>{ring(10, 11, 7)}{rect(8, 0, 3, 10)}</>}
       {kind === "team" && <>{ring(4, 6, 3)}{ring(16, 6, 3)}{rect(1, 12, 6, 3)}{rect(13, 12, 6, 3)}</>}
+      {kind === "system" && <>{rect(1, 3, 18, 12)}{rect(7, 17, 6, 2)}<polyline points="4,11 7,8 10,12 13,6 16,9" fill="none" stroke={c} strokeWidth={2} /></>}
       {kind === "settings" && <>{ring(10, 10, 5)}{ring(10, 10, 2)}{rect(9, 0, 2, 4)}{rect(9, 16, 2, 4)}{rect(0, 9, 4, 2)}{rect(16, 9, 4, 2)}</>}
     </svg>
   );

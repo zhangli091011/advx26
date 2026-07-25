@@ -52,12 +52,12 @@ export async function POST(request: Request) {
     if (!hub.state.connection.gatewayConnected) {
       return apiError("设备网关长连接未建立，指令未发送", 503);
     }
-    const toolboxSlot = /^U1-(0[1-9]|10)$/.test(target);
-    const seenAt = toolboxSlot ? hub.state.connection.deviceLastSeen.toolbox : hub.state.connection.deviceLastSeen.cabinet;
+    const toolDrawer = hub.drawerForTool(target);
+    const seenAt = toolDrawer ? hub.state.connection.deviceLastSeen.toolbox : hub.state.connection.deviceLastSeen.cabinet;
     if (!isRecentlySeen(seenAt)) {
-      return apiError(`${toolboxSlot ? "工具箱" : "储物柜"}分控离线或数据已过期，指令未发送`, 503);
+      return apiError(`${toolDrawer ? "工具抽屉" : "储物柜"}分控离线或数据已过期，指令未发送`, 503);
     }
-    sent = await hub.publishControl(`locate/${target}`, { blink: true });
+    sent = await hub.publishControl(toolDrawer ? `toolbox/locate/${toolDrawer}` : `locate/${target}`, { blink: true });
   } else if (action === "locate-unit") {
     if (!hub.state.connection.gatewayConnected) {
       return apiError("设备网关长连接未建立，指令未发送", 503);
@@ -66,6 +66,14 @@ export async function POST(request: Request) {
       return apiError("储物柜分控离线或数据已过期，指令未发送", 503);
     }
     sent = await hub.publishControl(`locate-unit/${target}`, { blink: true });
+  } else if (action === "can-serial") {
+    if (!hub.state.connection.gatewayConnected) {
+      return apiError("设备网关长连接未建立，指令未发送", 503);
+    }
+    if (!isRecentlySeen(hub.state.connection.deviceLastSeen.can)) {
+      return apiError("ESP32-S3 CAN 探针离线或数据已过期", 503);
+    }
+    sent = await hub.publishControl("can/serial", { command: parsed.command.command });
   }
 
   return sent ? apiSuccess({ sent: true }) : apiError("长连接指令发送失败", 503);

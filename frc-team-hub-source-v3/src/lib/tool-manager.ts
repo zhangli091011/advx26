@@ -6,10 +6,14 @@ import { randomUUID } from "node:crypto";
 import { getPitConfigPath } from "@/lib/pit-config";
 import {
   createEmptyToolStore,
+  aggregateDrawerStates,
+  drawerIds,
   nextToolState,
-  parseToolStore,
+  parseToolInput,
+  parseBorrower,
   parseToolOperation,
-  parseToolSlotInput,
+  parseToolStore,
+  TOOL_DRAWER_COUNT,
   TOOL_SESSION_MS,
   type ToolStoreData,
 } from "@/lib/tool-model";
@@ -22,13 +26,14 @@ export class ToolManager {
   private readonly stationId = process.env.PIT_TOOL_STATION_ID?.trim() || "main";
 
   get tools(): PitTool[] {
-    return this.data.slots.filter((slot) => slot.enabled).map((slot) => ({
-      slot: slot.slot,
-      name: slot.name,
-      unit: "U1",
-      state: slot.state,
-      time: slot.checkedOutAt ? new Date(slot.checkedOutAt).toLocaleString("zh-CN", { hour12: false }) : undefined,
-      qr: slot.qr,
+    return this.data.tools.map((tool) => ({
+      slot: tool.id,
+      name: tool.name,
+      unit: tool.drawer,
+      state: tool.state,
+      who: tool.borrower ?? undefined,
+      time: tool.checkedOutAt ? new Date(tool.checkedOutAt).toLocaleString("zh-CN", { hour12: false }) : undefined,
+      qr: tool.qr,
     }));
   }
 
@@ -44,44 +49,56 @@ export class ToolManager {
       desiredRevision: this.data.revision,
       appliedRevision: null,
       recentTransactions: this.data.transactions.slice(0, 10).map((item) => ({
-        id: item.id,
-        slot: item.slot,
-        name: item.name,
-        operation: item.operation,
-        createdAt: item.createdAt,
+        id: item.id, slot: item.toolId, name: item.name, operation: item.operation, borrower: item.borrower, createdAt: item.createdAt,
       })),
     };
   }
 
-  get slots() {
-    return this.data.slots.map(({ slot, ledIndex, enabled, name, qr, state }) => ({ slot, ledIndex, enabled, name, qr, state }));
+  get adminState() {
+    return { tools: this.tools, drawers: drawerIds() };
   }
 
   configure(input: unknown) {
-    const next = parseToolSlotInput(input);
-    const duplicate = this.data.slots.find((slot) => slot.slot !== next.slot && slot.enabled && slot.qr === next.qr);
-    if (next.enabled && duplicate) throw new Error(`二维码已绑定到 ${duplicate.slot}`);
-    const slot = this.data.slots.find((item) => item.slot === next.slot);
-    if (!slot) throw new Error("工具位不存在");
-    slot.enabled = next.enabled;
-    slot.name = next.enabled ? next.name : "";
-    slot.qr = next.enabled ? next.qr : "";
-    if (!next.enabled) {
-      slot.state = "in";
-      slot.checkedOutAt = null;
+    const next = parseToolInput(input);
+    const duplicate = this.data.tools.find((tool) => tool.id !== next.id && tool.qr === next.qr);
+    if (duplicate) throw new Error(`二维码已绑定到 ${duplicate.id}`);
+    if (!next.id) {
+      const tool = { ...next, id: `T-${randomUUID().slice(0, 8).toUpperCase()}`, state: "in" as const, borrower: null, checkedOutAt: null, updatedAt: Date.now() };
+      this.data.tools.push(tool);
+      this.bumpAndSave();
+      return tool;
     }
-    slot.updatedAt = Date.now();
-    this.data.revision += 1;
-    this.save();
-    return slot;
+    const tool = this.data.tools.find((item) => item.id === next.id);
+    if (!tool) throw new Error("工具不存在");
+    if (tool.state !== "in" && (tool.name !== next.name || tool.qr !== next.qr || tool.drawer !== next.drawer)) {
+      throw new Error("工具借出期间不能修改名称、二维码或所属抽屉");
+    }
+    Object.assign(tool, { name: next.name, qr: next.qr, drawer: next.drawer, updatedAt: Date.now() });
+    this.bumpAndSave();
+    return tool;
   }
 
-  startSession(operationInput: unknown) {
+  remove(idInput: unknown) {
+    const id = typeof idInput === "string" ? idInput.trim().toUpperCase() : "";
+    const index = this.data.tools.findIndex((tool) => tool.id === id);
+    if (index < 0) throw new Error("工具不存在");
+    if (this.data.tools[index].state !== "in") throw new Error("工具借出期间不能删除");
+    const [removed] = this.data.tools.splice(index, 1);
+    this.bumpAndSave();
+    return removed;
+  }
+
+  drawerForTool(id: string) {
+    return this.data.tools.find((tool) => tool.id === id)?.drawer ?? null;
+  }
+
+  startSession(operationInput: unknown, borrowerInput?: unknown) {
     this.expireSession();
     if (this.data.activeSession) throw new Error("已有扫码操作进行中，请先取消");
     const operation = parseToolOperation(operationInput);
+    const borrower = parseBorrower(borrowerInput, operation);
     const now = Date.now();
-    this.data.activeSession = { id: randomUUID(), operation, createdAt: now, expiresAt: now + TOOL_SESSION_MS };
+    this.data.activeSession = { id: randomUUID(), operation, borrower, createdAt: now, expiresAt: now + TOOL_SESSION_MS };
     this.save();
     return this.data.activeSession;
   }
@@ -101,40 +118,40 @@ export class ToolManager {
     this.expireSession();
     const session = this.data.activeSession;
     if (!session) throw new Error("当前没有借出或归还扫码会话");
-    const sessionId = typeof sessionIdInput === "string" ? sessionIdInput.trim() : "";
-    const stationId = typeof stationIdInput === "string" ? stationIdInput.trim() : "";
+    if (stationIdInput !== this.stationId || sessionIdInput !== session.id) throw new Error("扫码不属于当前操作会话");
     const capturedAt = typeof capturedAtInput === "number" && Number.isSafeInteger(capturedAtInput) ? capturedAtInput : 0;
-    if (stationId !== this.stationId) throw new Error("扫码站不匹配");
-    if (sessionId !== session.id) throw new Error("扫码不属于当前操作会话");
     if (capturedAt < session.createdAt || capturedAt > session.expiresAt) throw new Error("扫码不属于当前操作会话");
-    const slot = this.data.slots.find((item) => item.enabled && item.qr === qr);
-    if (!slot) throw new Error("二维码未登记");
+    const tool = this.data.tools.find((item) => item.qr === qr);
+    if (!tool) throw new Error("二维码未登记");
     const operation: ToolOperation = session.operation;
-    slot.state = nextToolState(slot.state, operation);
+    tool.state = nextToolState(tool.state, operation);
     const now = Date.now();
-    slot.checkedOutAt = operation === "checkout" ? now : null;
-    slot.updatedAt = now;
+    tool.checkedOutAt = operation === "checkout" ? now : null;
+    const borrower = operation === "checkout" ? session.borrower : tool.borrower;
+    tool.borrower = operation === "checkout" ? session.borrower : null;
+    tool.updatedAt = now;
     this.data.revision += 1;
     this.data.transactions.unshift({
-      id: randomUUID(), scanId, slot: slot.slot, name: slot.name, qr, operation, createdAt: now,
+      id: randomUUID(), scanId, toolId: tool.id, drawer: tool.drawer, name: tool.name, qr, operation, borrower, createdAt: now,
     });
     this.data.transactions = this.data.transactions.slice(0, 500);
-    this.data.processedScans.unshift(scanId);
-    this.data.processedScans = this.data.processedScans.slice(0, 200);
+    this.data.processedScans = [scanId, ...this.data.processedScans].slice(0, 200);
     this.data.activeSession = null;
     this.save();
-    return { duplicate: false as const, slot, operation };
+    return { duplicate: false as const, slot: tool, operation };
   }
 
   ledSnapshot() {
     return {
       revision: this.data.revision,
-      slots: this.data.slots.map((slot) => ({
-        ledIndex: slot.ledIndex,
-        slot: slot.slot,
-        state: slot.enabled ? slot.state : "unconfigured",
-      })),
+      drawerCount: TOOL_DRAWER_COUNT,
+      drawers: aggregateDrawerStates(this.data.tools),
     };
+  }
+
+  private bumpAndSave() {
+    this.data.revision += 1;
+    this.save();
   }
 
   private expireSession() {
@@ -148,18 +165,27 @@ export class ToolManager {
     const file = this.filePath();
     if (!fs.existsSync(file)) return createEmptyToolStore();
     try {
-      return parseToolStore(JSON.parse(fs.readFileSync(file, "utf8")));
+      const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+      const parsed = parseToolStore(raw);
+      if (raw.version !== 2) this.write(parsed);
+      return parsed;
     } catch (error) {
-      console.error(`[tools] 工具库读取失败：${error instanceof Error ? error.message : String(error)}，使用空配置`);
+      const backup = `${file}.invalid-${Date.now()}`;
+      fs.copyFileSync(file, backup);
+      console.error(`[tools] 工具库读取失败：${error instanceof Error ? error.message : String(error)}；原文件已备份到 ${backup}`);
       return createEmptyToolStore();
     }
   }
 
   private save() {
+    this.write(this.data);
+  }
+
+  private write(data: ToolStoreData) {
     const file = this.filePath();
     const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(temporary, `${JSON.stringify(this.data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    fs.writeFileSync(temporary, `${JSON.stringify(data, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
     fs.renameSync(temporary, file);
   }
 

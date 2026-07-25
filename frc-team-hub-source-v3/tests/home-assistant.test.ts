@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { discoverOutletsFromStates, measurement } from "../src/lib/home-assistant-model";
-import type { HomeAssistantState } from "../src/lib/home-assistant-client";
+import { discoverOutletsFromStates, measurement, type HomeAssistantState } from "../src/lib/home-assistant-model";
 
 function state(entityId: string, value: string, attributes: Record<string, unknown> = {}): HomeAssistantState {
   return { entity_id: entityId, state: value, attributes };

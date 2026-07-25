@@ -70,7 +70,7 @@ export function PitMatchClient() {
   const teamRank = data?.rankings.find((ranking) => ranking.team === teamNumber) ?? null;
 
   return (
-    <PitShell title="MATCH CENTER" active={4}>
+    <PitShell title="MATCH CENTER" active={5}>
       <div className="pit-match-source">
         <span className={error ? "degraded" : "online"} />
         {data ? `${data.event.name} · ${data.event.key}` : loading ? "正在连接赛事数据源" : "赛事数据不可用"}

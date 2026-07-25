@@ -1,10 +1,6 @@
-export const MATCH_SOURCE_URL = "https://pit.team8214.com";
+export const FRC_API_BASE_URL = "https://frc-api.firstinspires.org/v3.0";
 
-export type MatchAlliance = {
-  teams: number[];
-  score: number | null;
-};
-
+export type MatchAlliance = { teams: number[]; score: number | null };
 export type PitMatch = {
   key: string;
   label: string;
@@ -16,16 +12,7 @@ export type PitMatch = {
   estimatedTime: number | null;
   played: boolean;
 };
-
-export type PitRanking = {
-  rank: number;
-  team: number;
-  wins: number;
-  losses: number;
-  ties: number;
-  rankingScore: number | null;
-};
-
+export type PitRanking = { rank: number; team: number; wins: number; losses: number; ties: number; rankingScore: number | null };
 export type PitMatchData = {
   source: string;
   fetchedAt: string;
@@ -37,110 +24,146 @@ export type PitMatchData = {
 };
 
 type JsonRecord = Record<string, unknown>;
+export type FirstEvent = { code: string; name: string; dateStart: string; dateEnd: string };
 
-export function parseEventKey(payload: unknown) {
-  const config = record(payload)?.config;
-  const eventKey = typeof record(config)?.eventKey === "string" ? record(config)?.eventKey as string : "";
-  return /^\d{4}[a-z0-9]+$/i.test(eventKey) ? eventKey : null;
+export function parseFirstEvents(payload: unknown) {
+  const root = record(payload);
+  if (!root || !Array.isArray(root.Events)) return [];
+  return root.Events.flatMap((value): FirstEvent[] => {
+    const event = record(value);
+    if (!event || typeof event.code !== "string" || typeof event.name !== "string" || typeof event.dateStart !== "string" || typeof event.dateEnd !== "string") return [];
+    return [{ code: event.code, name: event.name, dateStart: event.dateStart, dateEnd: event.dateEnd }];
+  });
 }
 
-export function parseMatchPayload(payload: unknown, eventKey: string, teamNumber: number, teamName = "", fetchedAt = new Date().toISOString()): PitMatchData | null {
-  const root = record(payload);
-  const event = record(root?.event);
-  if (!root || !event || event.key !== eventKey || typeof event.name !== "string" || !Number.isInteger(event.year)) return null;
+export function selectFirstEvent(events: FirstEvent[], preferredCode: string | undefined, now = Date.now()) {
+  if (preferredCode) return events.find((event) => event.code.toLowerCase() === preferredCode.toLowerCase()) ?? null;
+  const dated = events.flatMap((event) => {
+    const start = parseEventBoundary(event.dateStart, false);
+    const end = parseEventBoundary(event.dateEnd, true);
+    return Number.isFinite(start) && Number.isFinite(end) ? [{ event, start, end }] : [];
+  });
+  return dated.find(({ start, end }) => start <= now && now <= end)?.event
+    ?? dated.filter(({ start }) => start > now).sort((a, b) => a.start - b.start)[0]?.event
+    ?? dated.filter(({ end }) => end < now).sort((a, b) => b.end - a.end)[0]?.event
+    ?? null;
+}
 
-  const matches = Array.isArray(root.matches) ? root.matches.flatMap(parseMatch) : [];
-  const rankings = Array.isArray(root.rankings) ? root.rankings.flatMap(parseRanking) : [];
+function parseEventBoundary(value: string, endOfDay: boolean) {
+  const parsed = Date.parse(value.includes("T") ? value : `${value}T${endOfDay ? "23:59:59" : "00:00:00"}`);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+export function parseFirstTeamName(payload: unknown) {
+  const teams = record(payload)?.teams;
+  if (!Array.isArray(teams)) return "";
+  const team = record(teams[0]);
+  return typeof team?.nameShort === "string" && team.nameShort.trim()
+    ? team.nameShort.trim()
+    : typeof team?.nameFull === "string" ? team.nameFull.trim() : "";
+}
+
+export function parseFirstMatchData(input: {
+  season: number;
+  event: FirstEvent;
+  schedules: unknown[];
+  results: unknown;
+  rankings: unknown;
+  teamNumber: number;
+  teamName?: string;
+  fetchedAt?: string;
+}): PitMatchData {
+  const results = new Map(arrayField(input.results, "Matches").flatMap((value) => {
+    const row = parseFirstResult(value);
+    return row ? [[matchIdentity(row.levelName, row.matchNumber), row] as const] : [];
+  }));
+  const matches = input.schedules.flatMap((payload) => arrayField(payload, "Schedule")).flatMap((value): PitMatch[] => {
+    const schedule = parseFirstSchedule(value);
+    if (!schedule) return [];
+    const result = results.get(matchIdentity(schedule.levelName, schedule.matchNumber));
+    const redScore = result?.redScore ?? null;
+    const blueScore = result?.blueScore ?? null;
+    const played = Boolean(result);
+    return [{
+      key: `${input.season}${input.event.code.toLowerCase()}_${levelCode(schedule.levelName)}${schedule.matchNumber}`,
+      label: schedule.description || matchLabel(schedule.levelName, schedule.matchNumber),
+      level: levelCode(schedule.levelName),
+      red: { teams: schedule.red, score: redScore },
+      blue: { teams: schedule.blue, score: blueScore },
+      winningAlliance: !played || redScore === blueScore ? null : redScore! > blueScore! ? "red" : "blue",
+      actualTime: parseFirstTime(result?.actualStartTime),
+      estimatedTime: parseFirstTime(schedule.startTime),
+      played,
+    }];
+  });
   return {
-    source: MATCH_SOURCE_URL,
-    fetchedAt,
-    teamNumber,
-    teamName,
-    event: { key: eventKey, name: event.name, year: event.year as number },
-    matches: matches.sort((a, b) => matchOrder(a) - matchOrder(b)),
-    rankings: rankings.sort((a, b) => a.rank - b.rank),
+    source: FRC_API_BASE_URL,
+    fetchedAt: input.fetchedAt ?? new Date().toISOString(),
+    teamNumber: input.teamNumber,
+    teamName: input.teamName ?? "",
+    event: { key: `${input.season}${input.event.code.toLowerCase()}`, name: input.event.name, year: input.season },
+    matches: matches.sort((a, b) => (a.estimatedTime ?? Number.MAX_SAFE_INTEGER) - (b.estimatedTime ?? Number.MAX_SAFE_INTEGER) || matchOrder(a) - matchOrder(b)),
+    rankings: arrayField(input.rankings, "Rankings").flatMap(parseFirstRanking).sort((a, b) => a.rank - b.rank),
   };
 }
 
-function parseMatch(value: unknown): PitMatch[] {
-  const match = record(value);
-  const alliances = record(match?.alliances);
-  const red = parseAlliance(record(alliances?.red));
-  const blue = parseAlliance(record(alliances?.blue));
-  const level = match?.comp_level;
-  const number = finiteInteger(match?.match_number);
-  const setNumber = finiteInteger(match?.set_number);
-  if (!match || typeof match.key !== "string" || !isLevel(level) || number === null || !red || !blue) return [];
-
-  const winningAlliance = match.winning_alliance === "red" || match.winning_alliance === "blue"
-    ? match.winning_alliance
-    : null;
-  return [{
-    key: match.key,
-    label: matchLabel(level, number, setNumber),
-    level,
-    red,
-    blue,
-    winningAlliance,
-    actualTime: positiveNumber(match.actual_time),
-    estimatedTime: positiveNumber(match.predicted_time) ?? positiveNumber(match.scheduled_time),
-    played: red.score !== null && blue.score !== null,
-  }];
+function parseFirstSchedule(value: unknown) {
+  const row = record(value);
+  const matchNumber = finiteInteger(row?.matchNumber);
+  if (!row || typeof row.tournamentLevel !== "string" || matchNumber === null || !Array.isArray(row.teams)) return null;
+  const teams = parseFirstTeams(row.teams);
+  if (!teams) return null;
+  return { levelName: row.tournamentLevel, matchNumber, description: typeof row.description === "string" ? row.description : "", startTime: typeof row.startTime === "string" ? row.startTime : null, ...teams };
 }
 
-function parseAlliance(value: JsonRecord | null): MatchAlliance | null {
-  if (!value || !Array.isArray(value.team_keys)) return null;
-  const teams = value.team_keys.flatMap((key) => {
-    const found = typeof key === "string" ? key.match(/^frc(\d{1,5})$/i) : null;
-    return found ? [Number(found[1])] : [];
+function parseFirstResult(value: unknown) {
+  const row = record(value);
+  const matchNumber = finiteInteger(row?.matchNumber);
+  const redScore = finiteNumber(row?.scoreRedFinal);
+  const blueScore = finiteNumber(row?.scoreBlueFinal);
+  if (!row || typeof row.tournamentLevel !== "string" || matchNumber === null || redScore === null || blueScore === null) return null;
+  return { levelName: row.tournamentLevel, matchNumber, redScore, blueScore, actualStartTime: typeof row.actualStartTime === "string" ? row.actualStartTime : null };
+}
+
+function parseFirstTeams(values: unknown[]) {
+  const parsed = values.flatMap((value) => {
+    const team = record(value);
+    const teamNumber = finiteInteger(team?.teamNumber);
+    return team && teamNumber !== null && typeof team.station === "string" ? [{ number: teamNumber, station: team.station }] : [];
   });
-  if (teams.length !== value.team_keys.length) return null;
-  return { teams, score: finiteNumber(value.score) };
+  if (parsed.length !== values.length) return null;
+  const alliance = (prefix: string) => parsed.filter((team) => team.station.toLowerCase().startsWith(prefix)).sort((a, b) => a.station.localeCompare(b.station)).map((team) => team.number);
+  return { red: alliance("red"), blue: alliance("blue") };
 }
 
-function parseRanking(value: unknown): PitRanking[] {
-  const ranking = record(value);
-  const teamMatch = typeof ranking?.team_key === "string" ? ranking.team_key.match(/^frc(\d{1,5})$/i) : null;
-  const recordValue = record(ranking?.record);
-  const rank = finiteInteger(ranking?.rank);
-  const wins = finiteInteger(recordValue?.wins);
-  const losses = finiteInteger(recordValue?.losses);
-  const ties = finiteInteger(recordValue?.ties);
-  if (!teamMatch || rank === null || wins === null || losses === null || ties === null) return [];
-  const sortOrders = Array.isArray(ranking?.sort_orders) ? ranking.sort_orders : [];
-  return [{ rank, team: Number(teamMatch[1]), wins, losses, ties, rankingScore: finiteNumber(sortOrders[0]) }];
+function parseFirstRanking(value: unknown): PitRanking[] {
+  const row = record(value);
+  const rank = finiteInteger(row?.rank);
+  const team = finiteInteger(row?.teamNumber);
+  const wins = finiteInteger(row?.wins);
+  const losses = finiteInteger(row?.losses);
+  const ties = finiteInteger(row?.ties);
+  if (rank === null || team === null || wins === null || losses === null || ties === null) return [];
+  return [{ rank, team, wins, losses, ties, rankingScore: finiteNumber(row?.sortOrder1) }];
 }
 
-function matchLabel(level: PitMatch["level"], number: number, setNumber: number | null) {
-  if (level === "practice") return `P${number}`;
-  if (level === "qm") return `Q${number}`;
-  if (level === "f") return `F${number}`;
-  return `${level === "sf" ? "SF" : "M"}${setNumber ?? number}`;
+function levelCode(value: string): PitMatch["level"] {
+  const level = value.toLowerCase();
+  if (level === "practice") return "practice";
+  if (level === "qualification") return "qm";
+  if (level.includes("final") && !level.includes("semi")) return "f";
+  return "sf";
 }
 
-function matchOrder(match: PitMatch) {
-  const levelOrder = { practice: 0, qm: 1, ef: 2, sf: 3, f: 4 };
-  const keyNumber = Number(match.key.match(/(?:qm|practice|m)(\d+)$/)?.[1] ?? 0);
-  return levelOrder[match.level] * 1_000_000 + keyNumber;
+function matchLabel(level: string, number: number) {
+  const code = levelCode(level);
+  return code === "practice" ? `P${number}` : code === "qm" ? `Q${number}` : code === "f" ? `F${number}` : `M${number}`;
 }
 
-function record(value: unknown): JsonRecord | null {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as JsonRecord : null;
-}
-
-function isLevel(value: unknown): value is PitMatch["level"] {
-  return value === "practice" || value === "qm" || value === "ef" || value === "sf" || value === "f";
-}
-
-function finiteNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function positiveNumber(value: unknown) {
-  const number = finiteNumber(value);
-  return number !== null && number > 0 ? number : null;
-}
-
-function finiteInteger(value: unknown) {
-  return typeof value === "number" && Number.isInteger(value) ? value : null;
-}
+function matchIdentity(level: string, number: number) { return `${level.toLowerCase()}:${number}`; }
+function matchOrder(match: PitMatch) { return ({ practice: 0, qm: 1, ef: 2, sf: 3, f: 4 })[match.level] * 1_000_000 + Number(match.key.match(/(\d+)$/)?.[1] ?? 0); }
+function parseFirstTime(value: string | null | undefined) { const parsed = value ? Date.parse(value) : NaN; return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null; }
+function arrayField(value: unknown, field: string) { const found = record(value)?.[field]; return Array.isArray(found) ? found : []; }
+function record(value: unknown): JsonRecord | null { return typeof value === "object" && value !== null && !Array.isArray(value) ? value as JsonRecord : null; }
+function finiteNumber(value: unknown) { return typeof value === "number" && Number.isFinite(value) ? value : null; }
+function finiteInteger(value: unknown) { return typeof value === "number" && Number.isInteger(value) ? value : null; }

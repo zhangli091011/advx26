@@ -112,19 +112,23 @@ void onGatewayMessage(WebsocketsMessage incoming) {
   if (strcmp(type, "event")) return;
   String t = envelope["channel"].as<String>();
   if (t.startsWith("pit/control/locate/")) {
-    // pit/control/locate/U1-03 → 单元 1 格位 3
     String slot = t.substring(strlen("pit/control/locate/"));
     int dash = slot.indexOf('-');
-    if (dash > 0) {
-      blinkState.unit = slot.substring(1, dash).toInt() - 1;   // "U1"→0
-      blinkState.slot = slot.substring(dash + 1).toInt() - 1;
+    int unit = dash > 1 ? slot.substring(1, dash).toInt() - 1 : -1;
+    int cell = dash > 0 ? slot.substring(dash + 1).toInt() - 1 : -1;
+    if (unit >= 0 && unit < 8 && cell >= 0 && cell < 8) {
+      blinkState.unit = unit;
+      blinkState.slot = cell;
       blinkState.until = millis() + 15000;
     }
   } else if (t.startsWith("pit/control/locate-unit/")) {
     String unit = t.substring(strlen("pit/control/locate-unit/"));
-    blinkState.unit = unit.substring(1).toInt() - 1;
-    blinkState.slot = -1;   // 整单元
-    blinkState.until = millis() + 15000;
+    int index = unit.substring(1).toInt() - 1;
+    if (index >= 0 && index < 8) {
+      blinkState.unit = index;
+      blinkState.slot = -1;
+      blinkState.until = millis() + 15000;
+    }
   }
 }
 
