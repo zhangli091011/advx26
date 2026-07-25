@@ -1,20 +1,20 @@
 /*
  * PIT-OS ESP32-B — 电源配电箱分控
- * 功能：8 路继电器 + 8 路 ACS712 电流检测 + 4 路电池电压 + DS18B20 温度 ×2 + MQTT
- * 通信：WiFi → MQTT Broker（树莓派 5）
+ * 功能：8 路继电器 + 8 路 ACS712 电流检测 + 4 路电池电压 + DS18B20 温度 ×2
+ * 通信：WiFi → WebSocket 设备网关（树莓派 5）
  */
 #include <WiFi.h>
-#include <PubSubClient.h>
+#include <ArduinoWebsockets.h>
+#include <ArduinoJson.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+using namespace websockets;
 
 /* ---------- 配置（部署前修改） ---------- */
 const char* WIFI_SSID   = "PIT-NET";
 const char* WIFI_PASS   = "your-password";
-const char* MQTT_HOST   = "192.168.1.10";
-const uint16_t MQTT_PORT = 1883;
-const char* MQTT_USER   = "pit-device";
-const char* MQTT_PASS   = "change-this-password";
+const char* GATEWAY_URL = "ws://192.168.66.34:8765";
+const char* GATEWAY_TOKEN = "replace-with-gateway-token";
 const char* DEVICE_ID   = "esp32-b";
 
 /* ---------- 引脚映射（见 hardware/README.md §4） ---------- */
@@ -34,12 +34,26 @@ const char* CH_ZONES[8] = {
 const float CH_VOLTS[8] = { 220, 24, 20, 12, 12, 12, 20, 0 };
 const float MAX_CURRENT_AMPS = 16.0f;
 
-WiFiClient espClient;
-PubSubClient mqtt(espClient);
+WebsocketsClient gateway;
+bool gatewayReady = false;
+uint32_t lastConnectAttempt = 0;
 OneWire oneWire(ONEWIRE);
 DallasTemperature sensors(&oneWire);
 
 bool chState[8] = { true, true, true, false, true, true, true, false };
+
+void publishGateway(const char* channel, const String& payload, bool retain = true) {
+  if (!gatewayReady) return;
+  StaticJsonDocument<1024> message;
+  message["type"] = "publish";
+  message["messageId"] = String(millis());
+  message["channel"] = channel;
+  message["payload"] = payload;
+  message["retain"] = retain;
+  String output;
+  serializeJson(message, output);
+  gateway.send(output);
+}
 
 /* ACS712-20A：灵敏度 100mV/A，零点约 Vcc/2 */
 float readCurrent(uint8_t ch) {
@@ -80,7 +94,7 @@ void publishChannel(uint8_t ch) {
   payload += "\"watts\":" + String(watts, 0) + ",";
   payload += "\"on\":" + String(chState[ch] ? "true" : "false");
   payload += "}";
-  mqtt.publish(topic, payload.c_str(), true);
+  publishGateway(topic, payload);
 }
 
 void publishBattery(uint8_t i) {
@@ -94,7 +108,7 @@ void publishBattery(uint8_t i) {
   payload += "\"charging\":" + String(charging ? "true" : "false") + ",";
   payload += "\"volts\":" + String(v, 1);
   payload += "}";
-  mqtt.publish(topic, payload.c_str(), true);
+  publishGateway(topic, payload);
 }
 
 void publishEnv() {
@@ -105,7 +119,7 @@ void publishEnv() {
   payload += "\"tempC\":" + String(t0, 1) + ",";
   payload += "\"humidity\":null";  // 未安装湿度传感器
   payload += "}";
-  mqtt.publish("pit/esp32-b/env", payload.c_str(), true);
+  publishGateway("pit/esp32-b/env", payload);
 
   /* 温度安全：>45°C 开风扇（CH6 复用示例），>60°C 全部断电 */
   if (t0 > 60.0f) {
@@ -113,31 +127,38 @@ void publishEnv() {
   }
 }
 
-void onMqtt(char* topic, byte* payload, unsigned int len) {
-  String t(topic);
-  String p;
-  for (unsigned int i = 0; i < len; i++) p += (char)payload[i];
-
+void onGatewayMessage(WebsocketsMessage incoming) {
+  StaticJsonDocument<1024> envelope;
+  if (deserializeJson(envelope, incoming.data())) return;
+  const char* type = envelope["type"] | "";
+  if (!strcmp(type, "welcome")) {
+    gatewayReady = true;
+    gateway.send("{\"type\":\"subscribe\",\"channels\":[\"pit/control/power/#\"]}");
+    publishGateway("pit/esp32-b/status", "online", true);
+    return;
+  }
+  if (strcmp(type, "event")) return;
+  String t = envelope["channel"].as<String>();
+  String p = envelope["payload"].as<String>();
   if (t.startsWith("pit/control/power/")) {
     String ch = t.substring(strlen("pit/control/power/"));   // "CH4"
     int idx = ch.substring(2).toInt() - 1;
     if (idx >= 0 && idx < 8) {
-      chState[idx] = p.indexOf("true") >= 0;
+      StaticJsonDocument<128> command;
+      if (deserializeJson(command, p) || !command["on"].is<bool>()) return;
+      chState[idx] = command["on"].as<bool>();
       applyRelay(idx);
       publishChannel(idx);   // 立即回显
     }
   }
 }
 
-void reconnect() {
-  while (!mqtt.connected()) {
-    if (mqtt.connect(DEVICE_ID, MQTT_USER, MQTT_PASS, "pit/esp32-b/status", 1, true, "offline")) {
-      mqtt.publish("pit/esp32-b/status", "online", true);
-      mqtt.subscribe("pit/control/power/#");
-    } else {
-      delay(2000);
-    }
-  }
+void connectGateway() {
+  if (millis() - lastConnectAttempt < 2000) return;
+  lastConnectAttempt = millis();
+  gatewayReady = false;
+  if (!gateway.connect(GATEWAY_URL)) return;
+  gateway.send("{\"type\":\"hello\",\"clientId\":\"esp32-b\",\"role\":\"power\",\"token\":\"" + String(GATEWAY_TOKEN) + "\"}");
 }
 
 void setup() {
@@ -150,14 +171,15 @@ void setup() {
   sensors.begin();
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) delay(300);
-  mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setCallback(onMqtt);
+  gateway.onMessage(onGatewayMessage);
+  gateway.onEvent([](WebsocketsEvent event, String) { if (event == WebsocketsEvent::ConnectionClosed) gatewayReady = false; });
 }
 
 uint32_t lastReport = 0;
 void loop() {
-  if (!mqtt.connected()) reconnect();
-  mqtt.loop();
+  if (WiFi.status() != WL_CONNECTED) WiFi.reconnect();
+  if (!gateway.available()) connectGateway();
+  gateway.poll();
 
   if (millis() - lastReport > 2000) {
     lastReport = millis();

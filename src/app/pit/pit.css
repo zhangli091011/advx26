@@ -23,20 +23,12 @@
   inset: 0;
   width: 100vw;
   height: 100dvh;
+  display: grid;
+  place-items: center;
   background: var(--pit-bg);
   color: var(--pit-text);
   font-family: var(--font-zh);
-  overscroll-behavior: contain;
-  touch-action: pan-x pan-y;
-}
-
-.pit-root-fitted {
   overflow: hidden;
-}
-
-.pit-root-scrollable {
-  overflow: auto;
-  scrollbar-gutter: stable;
 }
 
 .pit-root button { font: inherit; cursor: pointer; }
@@ -44,8 +36,6 @@
 .pit-frame {
   position: relative;
   flex: none;
-  margin-left: max(0px, calc((100vw - var(--pit-frame-width)) / 2));
-  margin-top: max(0px, calc((100dvh - var(--pit-frame-height)) / 2));
 }
 
 .pit-stage {
@@ -278,6 +268,8 @@
   font-family: var(--font-tech); font-weight: 600; font-size: 16px; white-space: pre;
 }
 .pit-alliance .us { display: block; margin-top: 8px; color: var(--pit-text-2); font-size: 11px; }
+.pit-alliance.blue { background: rgba(85, 156, 255, 0.12); border-color: rgba(85, 156, 255, 0.6); }
+.pit-alliance.blue strong, .pit-alliance.blue .teams { color: #559cff; }
 .pit-field-label { position: absolute; left: 31px; top: 247px; color: var(--pit-text-2); font-size: 11px; }
 .pit-field-cell {
   position: absolute; top: 243px;
@@ -514,6 +506,7 @@
 }
 .pit-ticker .live { margin-left: 12px; color: var(--pit-err); font-family: var(--font-tech); font-weight: 600; }
 .pit-ticker .ai { margin-left: 108px; color: var(--pit-text-2); }
+.pit-dashboard-error { position: absolute; z-index: 12; right: 40px; bottom: 44px; max-width: 520px; padding: 12px 18px; border: 1px solid var(--pit-err); background: rgba(242,77,64,.14); color: var(--pit-err); font-size: 12px; }
 .pit-ticker .live i { animation: pit-blink 1.2s ease-in-out infinite; font-style: normal; }
 
 @keyframes pit-blink { 50% { opacity: 0.25; } }
@@ -725,7 +718,7 @@
 .pit-tool-config-dialog { position: relative; width: 900px; min-height: 520px; padding: 30px; border: 1px solid var(--pit-accent); background: var(--pit-panel); box-shadow: 0 20px 70px rgba(0,0,0,0.65); }
 .pit-tool-config-dialog h2 { margin: 0 0 24px; font-family: var(--font-display); letter-spacing: 2px; }
 .pit-tool-config-close { position: absolute; right: 20px; top: 16px; border: 0; background: transparent; color: var(--pit-text-2); font-size: 28px; }
-.pit-tool-slot-tabs { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; margin-bottom: 28px; }
+.pit-tool-slot-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 28px; }
 .pit-tool-slot-tabs button { height: 62px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); color: var(--pit-text-2); font-family: var(--font-tech); }
 .pit-tool-slot-tabs button.active { border-color: var(--pit-accent); color: var(--pit-accent); }
 .pit-tool-slot-tabs small { display: block; margin-top: 6px; font-size: 9px; }
@@ -736,6 +729,37 @@
 .pit-tool-config-dialog p { color: var(--pit-text-2); }
 .pit-tool-config-error { color: var(--pit-err); font-size: 13px; }
 .pit-tool-config-save { position: absolute; right: 30px; bottom: 28px; height: 42px; padding: 0 22px; border: 1px solid var(--pit-accent); background: rgba(255,199,0,0.12); color: var(--pit-accent); }
+.pit-tool-drawer-note { position: absolute; left: 24px; right: 24px; bottom: 35px; padding: 15px; border-left: 3px solid var(--pit-accent); background: var(--pit-panel-2); color: var(--pit-text-2); font-size: 11px; line-height: 1.8; }
+.pit-tool-edit-name { position: absolute; left: 24px; top: 10px; width: 350px; border: 0; background: transparent; color: var(--pit-text); text-align: left; }
+.pit-tool-edit-name:hover { color: var(--pit-accent); }
+.pit-tool-edit-mini { position: absolute; top: 9px; width: 72px; height: 28px; border: 1px solid var(--pit-line); background: transparent; color: var(--pit-text-2); font-size: 11px; }
+.pit-tools-empty { position: absolute; left: 24px; right: 24px; top: 210px; color: var(--pit-text-2); font-size: 13px; text-align: center; }
+.pit-tool-pagination { position: absolute; left: 24px; right: 24px; bottom: 14px; display: flex; justify-content: flex-end; align-items: center; gap: 14px; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; }
+.pit-tool-pagination button { height: 28px; padding: 0 12px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); color: var(--pit-text); font-size: 10px; }
+.pit-tool-pagination button:disabled { opacity: .35; cursor: default; }
+.pit-tool-vision { position: absolute; left: 520px; top: 58px; width: 260px; height: 164px; padding: 18px; border: 1px solid var(--pit-err); }
+.pit-tool-vision.ready { border-color: var(--pit-ok); }
+.pit-tool-vision strong { color: var(--pit-err); font-family: var(--font-tech); }
+.pit-tool-vision.ready strong { color: var(--pit-ok); }
+.pit-tool-vision p { margin: 14px 0 0; overflow-wrap: anywhere; color: var(--pit-text-2); font-size: 10px; }
+.pit-tool-borrower { position: absolute; left: 29px; top: 110px; display: grid; gap: 5px; color: var(--pit-text-2); font-size: 10px; }
+.pit-tool-borrower input { width: 260px; height: 34px; padding: 0 10px; border: 1px solid var(--pit-line); background: var(--pit-dark); color: var(--pit-text); outline: 0; }
+.pit-tool-borrower input:focus { border-color: var(--pit-accent); }
+.pit-tool-stats { position: absolute; left: 24px; right: 24px; top: 63px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.pit-tool-stats span { padding: 9px 12px; background: var(--pit-panel-2); color: var(--pit-text-2); font-size: 10px; }
+.pit-tool-stats strong { display: block; margin-top: 5px; color: var(--pit-accent); font-family: var(--font-tech); font-size: 18px; }
+.pit-tool-transactions { position: absolute; left: 24px; right: 24px; top: 130px; }
+.pit-tool-transactions > div { height: 35px; display: grid; grid-template-columns: 85px 55px 1fr 100px; align-items: center; border-bottom: 1px solid var(--pit-line); font-size: 11px; }
+.pit-tool-transactions time, .pit-tool-transactions code { color: var(--pit-text-2); font-family: var(--font-tech); }
+.pit-tool-transactions strong { color: var(--pit-accent); }
+.pit-tool-transactions p { color: var(--pit-text-2); text-align: center; }
+.pit-tool-dialog { min-height: 570px; }
+.pit-tool-drawer-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 24px; }
+.pit-tool-drawer-tabs button { height: 70px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); color: var(--pit-text-2); font-family: var(--font-tech); font-size: 20px; }
+.pit-tool-drawer-tabs button.active { border-color: var(--pit-accent); background: rgba(255,199,0,.1); color: var(--pit-accent); }
+.pit-tool-drawer-tabs small { display: block; margin-top: 7px; font-size: 9px; }
+.pit-tool-remove { position: absolute; left: 30px; bottom: 28px; height: 42px; padding: 0 22px; border: 1px solid var(--pit-err); background: rgba(242,77,64,.1); color: var(--pit-err); }
+.pit-tool-remove:disabled { opacity: .4; cursor: not-allowed; }
 
 /* CAN device table rows */
 .pit-dev-row {
@@ -779,14 +803,67 @@
 .pit-topo-rio-link { position: absolute; left: 279px; top: 299px; width: 2px; height: 50px; background: var(--pit-ok); }
 .pit-topo-chart-lb { position: absolute; left: 29px; top: 389px; color: var(--pit-text-2); font-size: 13px; font-weight: 500; }
 .pit-topo-bar { position: absolute; width: 16px; }
+.pit-can-probe-stats { position: absolute; left: 29px; right: 29px; top: 420px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pit-can-probe-stats > span { padding: 10px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); color: var(--pit-text-2); font-family: var(--font-tech); font-size: 8px; }
+.pit-can-probe-stats strong { display: block; margin-top: 7px; color: var(--pit-accent); font-size: 12px; }
 
 /* serial log */
 .pit-log-row { position: absolute; left: 23px; display: grid; grid-template-columns: 156px 70px 1fr; font-family: var(--font-tech); font-size: 13px; }
 .pit-log-row time { color: rgba(135, 143, 156, 0.7); font-weight: 500; }
 .pit-log-row .lv { font-weight: 700; }
 .pit-log-row .msg { color: var(--pit-text); font-weight: 500; }
+.pit-serial-status { position: absolute; left: 23px; right: 620px; top: 57px; height: 34px; display: flex; align-items: center; gap: 24px; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; }
+.pit-serial-status > span:first-child { color: var(--pit-err); font-weight: 700; }
+.pit-serial-status > span:first-child.online { color: var(--pit-ok); }
+.pit-serial-status small { margin-left: auto; color: var(--pit-accent); }
+.pit-serial-status small.error { color: var(--pit-err); }
+.pit-serial-actions { position: absolute; right: 23px; top: 56px; display: flex; gap: 8px; }
+.pit-serial-actions button { min-width: 82px; height: 34px; padding: 0 11px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; }
+.pit-serial-actions button:hover:not(:disabled) { border-color: var(--pit-accent); color: var(--pit-accent); }
+.pit-serial-actions button:disabled { cursor: not-allowed; opacity: .4; }
 
 /* live score */
+.pit-match-source { position: absolute; left: 224px; top: 67px; right: 40px; height: 22px; display: flex; align-items: center; gap: 8px; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 11px; }
+.pit-match-source > span { width: 7px; height: 7px; border-radius: 50%; background: var(--pit-ok); }
+.pit-match-source > span.degraded { background: var(--pit-warn); }
+.pit-match-source button { margin-left: auto; border: 0; background: transparent; color: var(--pit-accent); font: inherit; cursor: pointer; }
+.pit-match-empty { position: absolute; inset: 46px 0 0; display: grid; place-items: center; color: var(--pit-text-2); font-size: 14px; }
+.pit-live-score-card { position: absolute; inset: 46px 15px 15px; display: grid; grid-template-columns: 1fr 90px 1fr; align-items: center; }
+.pit-live-score-meta { position: absolute; left: 0; right: 0; top: 10px; display: flex; justify-content: center; gap: 14px; font-family: var(--font-tech); }
+.pit-live-score-meta strong { color: var(--pit-accent); font-size: 17px; }
+.pit-live-score-meta span { color: var(--pit-text-2); font-size: 12px; }
+.pit-live-score-side { padding-top: 27px; text-align: center; }
+.pit-live-score-side > span { display: block; font-family: var(--font-tech); font-size: 12px; font-weight: 700; letter-spacing: 2px; }
+.pit-live-score-side > strong { display: block; margin: 5px 0; font-family: var(--font-display); font-size: 76px; line-height: 1; }
+.pit-live-score-side > small { font-family: var(--font-tech); font-size: 13px; }
+.pit-live-score-side.red { color: #ff665e; }
+.pit-live-score-side.blue { color: #559cff; }
+.pit-live-score-vs { padding-top: 30px; text-align: center; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 11px; letter-spacing: 2px; }
+.pit-next-match-card { position: absolute; inset: 46px 15px 15px; display: grid; grid-template-columns: 200px 1fr 190px; align-items: center; gap: 18px; }
+.pit-next-match-id span, .pit-next-alliance span, .pit-next-clock span { display: block; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; letter-spacing: 2px; }
+.pit-next-match-id strong { display: block; margin: 4px 0; color: var(--pit-accent); font-family: var(--font-display); font-size: 70px; line-height: 1; }
+.pit-next-match-id small { color: var(--pit-text-2); }
+.pit-next-alliance { padding: 22px; border: 1px solid currentColor; background: rgba(242, 89, 77, 0.08); color: #ff665e; }
+.pit-next-alliance.blue { color: #559cff; background: rgba(85, 156, 255, 0.08); }
+.pit-next-alliance strong { display: block; margin-top: 18px; font-family: var(--font-tech); font-size: 17px; }
+.pit-next-clock strong { display: block; margin-top: 8px; color: var(--pit-accent); font-family: var(--font-tech); font-size: 38px; font-variant-numeric: tabular-nums; }
+.pit-match-schedule, .pit-match-rankings { position: absolute; left: 15px; right: 15px; top: 56px; bottom: 15px; overflow-y: auto; scrollbar-color: var(--pit-accent) var(--pit-panel-2); }
+.pit-match-table-head, .pit-match-table-row { display: grid; grid-template-columns: 65px 65px 1fr 90px 1fr; align-items: center; min-height: 43px; padding: 0 12px; text-align: center; }
+.pit-match-table-head { position: sticky; top: 0; z-index: 1; min-height: 34px; background: var(--pit-panel-2); color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; }
+.pit-match-table-row { border-bottom: 1px solid var(--pit-line); font-family: var(--font-tech); font-size: 12px; }
+.pit-match-table-row.ours { background: rgba(255, 199, 0, 0.11); box-shadow: inset 3px 0 var(--pit-accent); }
+.pit-match-table-row .red { color: #ff665e; }
+.pit-match-table-row .blue { color: #559cff; }
+.pit-own-rank { position: sticky; top: 0; z-index: 2; height: 100px; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 15px 24px; background: #1b1c18; border: 1px solid rgba(255, 199, 0, 0.55); }
+.pit-own-rank span { color: var(--pit-accent); font-family: var(--font-tech); letter-spacing: 2px; }
+.pit-own-rank strong { grid-row: span 2; color: var(--pit-accent); font-family: var(--font-display); font-size: 58px; }
+.pit-own-rank small { color: var(--pit-text-2); font-family: var(--font-tech); }
+.pit-own-rank.missing { border-color: var(--pit-line); }
+.pit-own-rank.missing strong, .pit-own-rank.missing span { color: var(--pit-text-2); }
+.pit-rank-head, .pit-rank-row { display: grid; grid-template-columns: 70px 1fr 1fr 1fr; align-items: center; min-height: 42px; padding: 0 22px; text-align: center; }
+.pit-rank-head { position: sticky; top: 100px; z-index: 1; min-height: 34px; background: var(--pit-panel-2); color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; }
+.pit-rank-row { border-bottom: 1px solid var(--pit-line); font-family: var(--font-tech); font-size: 13px; }
+.pit-rank-row.ours { color: var(--pit-accent); background: rgba(255, 199, 0, 0.1); }
 .pit-score-tag { position: absolute; top: 71px; font-family: var(--font-tech); font-weight: 700; font-size: 18px; }
 .pit-score { position: absolute; top: 95px; font-family: var(--font-display); font-weight: 700; font-size: 88px; line-height: 1; }
 .pit-phase { position: absolute; top: 89px; font-family: var(--font-tech); font-weight: 600; font-size: 12px; }
@@ -878,6 +955,16 @@
 .pit-bat-pct { position: absolute; left: 390px; top: 17px; font-family: var(--font-tech); font-weight: 700; font-size: 14px; }
 .pit-bat-chg { position: absolute; left: 452px; top: 18px; color: var(--pit-accent); font-size: 12px; font-weight: 500; }
 
+.pit-power-chart { position: absolute; left: 31px; top: 178px; width: 496px; height: 103px; }
+.pit-power-chart-head { height: 18px; display: flex; justify-content: space-between; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 9px; letter-spacing: 1.2px; }
+.pit-power-chart-head .partial { color: var(--pit-warn); }
+.pit-power-chart svg { display: block; width: 100%; height: 82px; overflow: visible; }
+.pit-power-chart-grid { stroke: var(--pit-line); stroke-width: 1; stroke-dasharray: 3 5; vector-effect: non-scaling-stroke; }
+.pit-power-chart-line { fill: none; stroke: var(--pit-accent); stroke-width: 2; stroke-linecap: square; stroke-linejoin: bevel; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 3px color-mix(in srgb, var(--pit-accent) 45%, transparent)); }
+.pit-power-chart-dot { fill: var(--pit-bg); stroke: var(--pit-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.pit-power-chart-axis { fill: var(--pit-text-2); font-family: var(--font-tech); font-size: 8px; letter-spacing: .4px; }
+.pit-power-chart-empty { position: absolute; left: 38px; right: 6px; top: 52px; color: var(--pit-text-2); font-size: 11px; text-align: center; }
+
 /* safety rules */
 .pit-rule-row {
   position: absolute; left: 15px;
@@ -887,6 +974,49 @@
 .pit-rule-row .t { position: absolute; left: 16px; top: 12px; font-size: 14px; font-weight: 700; }
 .pit-rule-row .d { position: absolute; left: 220px; top: 13px; color: var(--pit-text-2); font-size: 13px; }
 .pit-rule-row .s { position: absolute; right: 20px; top: 13px; font-size: 13px; font-weight: 500; }
+
+/* RTMP camera switcher */
+.pit-camera-program { position: absolute; inset: 60px 15px 15px; overflow: hidden; background: #050607; border: 1px solid var(--pit-line); }
+.pit-camera-program iframe { width: 100%; height: 100%; border: 0; background: #050607; }
+.pit-camera-program-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 56px; display: grid; grid-template-columns: 80px 1fr 16px 110px; gap: 14px; align-items: center; padding: 0 18px; background: rgba(8, 9, 11, .88); border-top: 1px solid var(--pit-line); }
+.pit-camera-program-bar span { color: var(--pit-accent); font-family: var(--font-tech); font-size: 10px; letter-spacing: 1.5px; }
+.pit-camera-program-bar strong { font-family: var(--font-display); font-size: 18px; }
+.pit-camera-program-bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--pit-err); }
+.pit-camera-program-bar i.online { background: var(--pit-ok); box-shadow: 0 0 12px rgba(77,217,115,.7); }
+.pit-camera-program-bar a { color: var(--pit-blue); font-size: 12px; text-decoration: none; text-align: right; }
+.pit-camera-slate { position: absolute; inset: 0; display: grid; place-content: center; gap: 12px; text-align: center; background: repeating-linear-gradient(135deg,#090a0c,#090a0c 18px,#0d0f12 18px,#0d0f12 36px); }
+.pit-camera-slate span { color: var(--pit-err); font-family: var(--font-display); font-size: 52px; letter-spacing: 8px; }
+.pit-camera-slate strong { color: var(--pit-text-2); font-size: 13px; }
+.pit-camera-server { position: absolute; left: 20px; right: 20px; top: 62px; height: 58px; display: grid; grid-template-columns: 14px 110px 1fr; align-items: center; gap: 10px; border: 1px solid var(--pit-line); padding: 0 14px; }
+.pit-camera-server i { width: 9px; height: 9px; border-radius: 50%; background: var(--pit-err); }
+.pit-camera-server i.online { background: var(--pit-ok); }
+.pit-camera-server span, .pit-camera-server code { color: var(--pit-text-2); font-family: var(--font-tech); font-size: 9px; }
+.pit-camera-server strong { color: var(--pit-accent); font-family: var(--font-tech); font-size: 12px; }
+.pit-camera-server code { position: absolute; right: 14px; bottom: 6px; }
+.pit-camera-sources { position: absolute; left: 20px; right: 20px; top: 134px; display: grid; gap: 10px; }
+.pit-camera-sources article { position: relative; height: 126px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); }
+.pit-camera-sources article.preview { border-color: var(--pit-blue); }
+.pit-camera-sources article.program::before { content: "PROGRAM"; position: absolute; right: 12px; top: -1px; padding: 3px 7px; background: var(--pit-accent); color: var(--pit-dark); font-family: var(--font-tech); font-size: 8px; font-weight: 700; }
+.pit-camera-sources .num { position: absolute; left: 14px; top: 16px; color: var(--pit-accent); font-family: var(--font-display); font-size: 27px; }
+.pit-camera-sources .name { position: absolute; left: 64px; top: 15px; display: grid; gap: 5px; }
+.pit-camera-sources .name strong { font-size: 14px; }
+.pit-camera-sources .name span, .pit-camera-sources article small { color: var(--pit-text-2); font-family: var(--font-tech); font-size: 9px; }
+.pit-camera-sources .state { position: absolute; right: 14px; top: 38px; color: var(--pit-err); font-family: var(--font-tech); font-size: 10px; }
+.pit-camera-sources .state.online { color: var(--pit-ok); }
+.pit-camera-sources article button { position: absolute; bottom: 14px; width: 92px; height: 31px; border: 1px solid var(--pit-blue); background: transparent; color: var(--pit-blue); font-family: var(--font-tech); font-size: 9px; }
+.pit-camera-sources article button:first-of-type { left: 64px; }
+.pit-camera-sources article button.take { left: 164px; border-color: var(--pit-accent); color: var(--pit-accent); }
+.pit-camera-sources article button:disabled { opacity: .35; cursor: not-allowed; }
+.pit-camera-sources article small { position: absolute; right: 14px; bottom: 20px; }
+.pit-camera-help { position: absolute; inset: 66px 30px 24px; display: grid; grid-template-columns: 1.2fr 1fr .5fr 1.5fr; gap: 18px; }
+.pit-camera-help > div { padding: 15px 18px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); }
+.pit-camera-help span { display: block; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 9px; letter-spacing: 1px; }
+.pit-camera-help strong { display: block; margin-top: 14px; overflow: hidden; font-family: var(--font-tech); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.pit-camera-help strong.accent { color: var(--pit-accent); }
+.pit-camera-output { position: fixed; inset: 0; overflow: hidden; background: #000; }
+.pit-camera-output iframe { width: 100%; height: 100%; border: 0; }
+.pit-camera-output > div { width: 100%; height: 100%; display: grid; place-content: center; gap: 16px; color: #777; font-family: var(--font-tech); text-align: center; }
+.pit-camera-output > div span { color: var(--pit-err); font-size: 46px; letter-spacing: 8px; }
 
 /* team hero */
 .pit-hero-num { position: absolute; left: 47px; top: 39px; margin: 0; color: var(--pit-accent); font-family: var(--font-display); font-weight: 700; font-size: 220px; line-height: 1; }
@@ -1015,10 +1145,15 @@
 
 /* ---------- test & configuration management ---------- */
 .pit-settings-form { position: absolute; left: 24px; right: 24px; top: 58px; display: grid; gap: 12px; }
+.pit-settings-team { position: absolute; inset: 62px 24px 22px; display: flex; flex-direction: column; gap: 13px; }
+.pit-settings-team-preview { min-height: 120px; display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 16px; border: 1px solid rgba(255, 199, 0, 0.45); background: rgba(255, 199, 0, 0.07); }
+.pit-settings-team-preview span { color: var(--pit-accent); font-family: var(--font-tech); font-size: 10px; letter-spacing: 2px; }
+.pit-settings-team-preview strong { grid-row: span 2; color: var(--pit-accent); font-family: var(--font-display); font-size: 54px; line-height: 1; }
+.pit-settings-team-preview small { max-width: 190px; overflow: hidden; color: var(--pit-text-2); text-overflow: ellipsis; white-space: nowrap; }
+.pit-settings-team > p { margin: 0; color: var(--pit-text-2); font-size: 11px; line-height: 1.6; }
 .pit-settings-form.two-col { grid-template-columns: 1fr 1fr; column-gap: 16px; }
 .pit-settings-field { display: grid; gap: 5px; color: var(--pit-text-2); font-size: 11px; letter-spacing: 0.5px; }
 .pit-settings-field input,
-.pit-settings-field select,
 .pit-settings-property input {
   height: 34px; padding: 0 10px;
   border: 1px solid var(--pit-line); outline: 0;
@@ -1026,38 +1161,7 @@
   font-family: var(--font-tech); font-size: 12px;
 }
 .pit-settings-field input:focus,
-.pit-settings-field select:focus,
 .pit-settings-property input:focus { border-color: var(--pit-accent); box-shadow: 0 0 0 1px rgba(255, 199, 0, 0.18); }
-.pit-settings-field input:disabled { opacity: 0.55; cursor: not-allowed; }
-.pit-settings-note { margin: 0; color: var(--pit-text-2); font-size: 10px; line-height: 1.5; }
-.pit-settings-wide { grid-column: 1 / -1; }
-.pit-settings-address { display: grid; grid-template-columns: 90px 1fr 112px; gap: 12px; }
-.pit-settings-network {
-  min-height: 48px;
-  display: grid;
-  grid-template-columns: 104px 1fr auto;
-  gap: 10px;
-  align-items: center;
-  padding: 7px 10px;
-  border: 1px solid rgba(64, 140, 255, 0.42);
-  background: rgba(64, 140, 255, 0.06);
-  color: var(--pit-text-2);
-  font-size: 10px;
-}
-.pit-settings-network > span { color: var(--pit-blue); font-weight: 700; }
-.pit-settings-network > div { display: flex; flex-wrap: wrap; gap: 7px; }
-.pit-settings-network code {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  padding: 4px 7px;
-  border: 1px solid var(--pit-line);
-  color: var(--pit-text);
-}
-.pit-settings-network code.preferred { border-color: var(--pit-blue); color: var(--pit-blue); }
-.pit-settings-network code small,
-.pit-settings-network > small { color: var(--pit-text-2); font-size: 8px; }
-.pit-settings-network em { color: var(--pit-warn); font-style: normal; }
 .pit-settings-secret { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; }
 .pit-settings-secret > label,
 .pit-settings-check { height: 34px; display: flex; align-items: center; gap: 7px; color: var(--pit-text-2); font-size: 11px; }
@@ -1086,14 +1190,9 @@
 .pit-discovery-dialog > header { height: 54px; display: grid; grid-template-columns: auto 1fr auto; gap: 22px; align-items: center; border-bottom: 1px solid var(--pit-line); }
 .pit-discovery-dialog > header strong { color: var(--pit-accent); font-family: var(--font-display); font-size: 22px; }
 .pit-discovery-dialog > header span { color: var(--pit-text-2); font-size: 11px; }
+.pit-discovery-dialog > header select { justify-self: end; min-width: 180px; height: 32px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); color: var(--pit-text); padding: 0 9px; }
 .pit-discovery-dialog > header button { width: 76px; height: 32px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); color: var(--pit-text); }
-.pit-discovery-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 14px 0 4px; }
-.pit-discovery-filters label { display: grid; gap: 5px; color: var(--pit-text-2); font-size: 10px; }
-.pit-discovery-filters select,
-.pit-discovery-filters input { height: 36px; padding: 0 10px; border: 1px solid var(--pit-line); background: #0e1012; color: var(--pit-text); outline: none; }
-.pit-discovery-filters select:focus,
-.pit-discovery-filters input:focus { border-color: var(--pit-accent); }
-.pit-discovery-list { max-height: 560px; overflow-y: auto; padding-top: 10px; display: grid; gap: 10px; }
+.pit-discovery-list { max-height: 640px; overflow-y: auto; padding-top: 14px; display: grid; gap: 10px; }
 .pit-discovery-list article { min-height: 86px; display: grid; grid-template-columns: 14px 1fr 180px 210px 160px; gap: 16px; align-items: center; padding: 12px 16px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); }
 .pit-discovery-list article > i { width: 9px; height: 9px; border-radius: 50%; background: var(--pit-err); }
 .pit-discovery-list article > i.online { background: var(--pit-ok); box-shadow: 0 0 10px rgba(77, 217, 115, 0.55); }
@@ -1116,13 +1215,48 @@
 .pit-settings-outlet > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; color: var(--pit-accent); }
 .pit-settings-outlet > header button { border: 0; background: transparent; color: var(--pit-err); cursor: pointer; font-size: 11px; }
 .pit-settings-outlet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; }
-.pit-settings-ha-binding { height: 405px; }
-.pit-settings-entity-value { margin: 12px 0; }
-.pit-settings-entity-value code { min-height: 34px; display: flex; align-items: center; padding: 0 10px; border: 1px solid var(--pit-blue); background: rgba(64, 140, 255, 0.08); color: var(--pit-blue); font-size: 11px; overflow-wrap: anywhere; }
-.pit-settings-sensors { display: grid; gap: 9px; }
-.pit-settings-binding-note { margin: 12px 0; color: var(--pit-text-2); font-size: 10px; line-height: 1.5; }
-.pit-settings-remap { width: 100%; height: 34px; border: 1px solid var(--pit-line); background: transparent; color: var(--pit-text-2); font-size: 11px; }
-.pit-settings-remap:hover { border-color: var(--pit-blue); color: var(--pit-blue); }
+
+/* Raspberry Pi system monitor */
+.pit-system-chart { position: absolute; left: 31px; top: 70px; width: 930px; height: 260px; }
+.pit-system-chart-head { height: 28px; display: grid; grid-template-columns: 1fr auto auto 1fr; gap: 20px; align-items: center; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; }
+.pit-system-chart-head span:last-child { text-align: right; }
+.pit-system-chart-head strong { color: var(--pit-accent); letter-spacing: 1px; }
+.pit-system-chart-head strong.temp { color: var(--pit-blue); }
+.pit-system-chart svg { display: block; width: 930px; height: 220px; overflow: visible; }
+.pit-system-chart-grid { stroke: var(--pit-line); stroke-width: 1; stroke-dasharray: 4 7; vector-effect: non-scaling-stroke; }
+.pit-system-chart-cpu, .pit-system-chart-temp { fill: none; stroke-width: 2.5; stroke-linecap: square; stroke-linejoin: bevel; vector-effect: non-scaling-stroke; }
+.pit-system-chart-cpu { stroke: var(--pit-accent); filter: drop-shadow(0 0 4px rgba(255, 199, 0, .35)); }
+.pit-system-chart-temp { stroke: var(--pit-blue); filter: drop-shadow(0 0 4px rgba(64, 140, 255, .35)); }
+.pit-system-chart-empty { position: absolute; inset: 110px 0 auto; color: var(--pit-text-2); font-size: 12px; text-align: center; }
+.pit-system-gauges { position: absolute; left: 31px; right: 31px; top: 360px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.pit-system-gauge { display: grid; grid-template-columns: 44px 1fr 58px; gap: 10px; align-items: center; font-family: var(--font-tech); font-size: 11px; }
+.pit-system-gauge > span { color: var(--pit-text-2); }
+.pit-system-gauge > div { height: 8px; background: var(--pit-panel-2); }
+.pit-system-gauge > div i { display: block; height: 100%; transition: width 300ms linear; }
+.pit-system-gauge > strong { text-align: right; font-size: 12px; }
+.pit-system-loads { position: absolute; left: 31px; right: 31px; bottom: 20px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.pit-system-loads > div { height: 58px; padding: 10px 14px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); }
+.pit-system-loads span { display: block; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 9px; letter-spacing: 1px; }
+.pit-system-loads strong { display: block; margin-top: 7px; font-family: var(--font-tech); font-size: 17px; }
+.pit-system-health { position: absolute; left: 24px; right: 24px; top: 68px; height: 84px; padding: 17px 18px 12px 58px; border: 1px solid var(--pit-ok); background: rgba(77, 217, 115, .08); }
+.pit-system-health.error { border-color: var(--pit-err); background: rgba(242, 77, 64, .08); }
+.pit-system-health i { position: absolute; left: 20px; top: 31px; width: 16px; height: 16px; border-radius: 50%; background: var(--pit-ok); box-shadow: 0 0 16px rgba(77, 217, 115, .6); }
+.pit-system-health.error i { background: var(--pit-err); box-shadow: 0 0 16px rgba(242, 77, 64, .6); }
+.pit-system-health strong { display: block; color: var(--pit-ok); font-size: 18px; }
+.pit-system-health.error strong { color: var(--pit-err); }
+.pit-system-health span { display: block; margin-top: 7px; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; letter-spacing: 1px; }
+.pit-system-info { position: relative; margin: 0 24px; top: 170px; min-height: 40px; display: grid; grid-template-columns: 112px 1fr; align-items: center; border-bottom: 1px solid rgba(56, 59, 64, .65); }
+.pit-system-info span { color: var(--pit-text-2); font-size: 12px; }
+.pit-system-info strong { overflow: hidden; font-family: var(--font-tech); font-size: 12px; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.pit-system-info strong.ok, .pit-system-details strong.ok { color: var(--pit-ok); }
+.pit-system-info strong.warn { color: var(--pit-warn); }
+.pit-system-info strong.error, .pit-system-details strong.error { color: var(--pit-err); }
+.pit-system-details { position: absolute; inset: 70px 31px 28px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.pit-system-details article { position: relative; padding: 22px; border: 1px solid var(--pit-line); background: var(--pit-panel-2); }
+.pit-system-details article::before { content: ""; position: absolute; left: -1px; top: -1px; width: 5px; height: 38px; background: var(--pit-accent); }
+.pit-system-details span { display: block; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; letter-spacing: 1.5px; }
+.pit-system-details strong { display: block; margin-top: 24px; font-family: var(--font-display); font-size: 25px; }
+.pit-system-details small { display: block; margin-top: 13px; color: var(--pit-text-2); font-family: var(--font-tech); font-size: 10px; }
 .pit-settings-properties { margin: 13px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pit-settings-property { display: grid; grid-template-columns: 38px repeat(3, 1fr); gap: 5px; align-items: end; }
 .pit-settings-property > strong { color: var(--pit-text); font-size: 11px; align-self: center; }

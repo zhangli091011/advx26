@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Panel, PitShell } from "@/components/pit/pit-shell";
 import { pitControl, usePitState } from "@/components/pit/use-pit-state";
 
@@ -11,15 +11,36 @@ const RULES = [
   { t: "离场模式", d: "未接入批量控制策略", s: "未配置" },
 ];
 
+type PowerSample = { at: number; watts: number | null; partial: boolean };
+const POWER_HISTORY_MS = 2 * 60 * 1000;
+
 export function PitPowerClient() {
   const { state } = usePitState();
   const [controlError, setControlError] = useState<string | null>(null);
+  const [powerHistory, setPowerHistory] = useState<PowerSample[]>([]);
   const channels = state?.channels ?? [];
   const batteries = state?.batteries ?? [];
 
   const measuredChannels = channels.filter((channel) => channel.online && channel.watts !== null);
   const missingMeasurements = channels.some((channel) => channel.online && channel.on && channel.watts === null);
   const total = measuredChannels.reduce((sum, channel) => sum + (channel.on ? channel.watts ?? 0 : 0), 0);
+  const powerUpdatedAt = Math.max(0, ...channels.map((channel) => channel.updatedAt));
+
+  useEffect(() => {
+    if (!powerUpdatedAt) return;
+    const timer = window.setTimeout(() => {
+      setPowerHistory((history) => {
+        if (history.at(-1)?.at === powerUpdatedAt) return history;
+        const sample = {
+          at: powerUpdatedAt,
+          watts: measuredChannels.length ? total : null,
+          partial: missingMeasurements,
+        };
+        return [...history, sample].filter((item) => item.at >= powerUpdatedAt - POWER_HISTORY_MS).slice(-120);
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [missingMeasurements, measuredChannels.length, powerUpdatedAt, total]);
 
   async function togglePower(id: string, on: boolean) {
     setControlError(null);
@@ -31,7 +52,7 @@ export function PitPowerClient() {
   }
 
   return (
-    <PitShell title="POWER CONTROL" active={5}>
+    <PitShell title="POWER CONTROL" active={6}>
       {/* 供电通道 */}
       <Panel x={224} y={96} w={1080} h={640} title="供电通道" en="CHANNELS · REMOTE SWITCH">
         {channels.map((c, i) => (
@@ -54,14 +75,14 @@ export function PitPowerClient() {
             </button>
             {c.provider === "home-assistant" ? (
               <span style={{ position: "absolute", right: 18, top: 47, color: "var(--pit-blue)", fontSize: 9, letterSpacing: 1 }}>
-                HOME ASSISTANT {c.transport?.toUpperCase() ?? "OFFLINE"} · {c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : "无实时数据"}
+                HA {c.transport?.toUpperCase() ?? "OFFLINE"} · {c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : "无实时数据"}
               </span>
             ) : null}
           </div>
         ))}
         {channels.length === 0 ? (
           <div style={{ position: "absolute", left: 24, top: 200, color: "var(--pit-text-2)", fontSize: 13 }}>
-            等待电源数据…（在设置页发现并映射 Home Assistant 实体）
+            等待 Home Assistant 插座数据…（设置页一键发现并导入）
           </div>
         ) : null}
         {controlError ? (
@@ -79,12 +100,7 @@ export function PitPowerClient() {
         <span style={{ position: "absolute", left: 31, top: 149, color: "var(--pit-text-2)", fontSize: 13 }}>
           {missingMeasurements ? "部分开启通道暂无实时功率，当前为已测量合计" : channels.length ? "所有可用通道的实时功率合计" : "电源数据未配置"}
         </span>
-        <div className="pit-bar" style={{ left: 31, top: 189, width: 496, height: 10 }}>
-          <i style={{ width: "0%", background: "var(--pit-accent)" }} />
-        </div>
-        <span style={{ position: "absolute", left: 31, top: 211, color: "var(--pit-ok)", fontSize: 13, fontWeight: 500 }}>
-          负载阈值未配置
-        </span>
+        <PowerLineChart samples={powerHistory} partial={missingMeasurements} />
       </Panel>
 
       {/* 机器人电池 */}
@@ -128,4 +144,62 @@ function measurement(value: number | null, unit: string, digits = 0) {
 
 function formatWatts(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function PowerLineChart({ samples, partial }: { samples: PowerSample[]; partial: boolean }) {
+  const width = 496;
+  const height = 82;
+  const left = 38;
+  const right = 6;
+  const top = 7;
+  const bottom = 17;
+  const usable = samples.filter((sample) => sample.watts !== null);
+  const newestAt = samples.at(-1)?.at ?? POWER_HISTORY_MS;
+  const oldestAt = newestAt - POWER_HISTORY_MS;
+  const maxWatts = nicePowerMaximum(Math.max(0, ...usable.map((sample) => sample.watts ?? 0)));
+  const x = (at: number) => left + ((at - oldestAt) / Math.max(1, newestAt - oldestAt)) * (width - left - right);
+  const y = (watts: number) => top + (1 - watts / maxWatts) * (height - top - bottom);
+  const paths: string[] = [];
+  let current = "";
+  for (const sample of samples) {
+    if (sample.watts === null) {
+      if (current) paths.push(current);
+      current = "";
+      continue;
+    }
+    current += `${current ? " L" : "M"}${x(sample.at).toFixed(1)} ${y(sample.watts).toFixed(1)}`;
+  }
+  if (current) paths.push(current);
+  const latest = [...samples].reverse().find((sample) => sample.watts !== null);
+
+  return (
+    <div className="pit-power-chart">
+      <div className="pit-power-chart-head">
+        <span>LIVE · 2 MIN</span>
+        <span className={partial ? "partial" : ""}>{partial ? "PARTIAL" : `${formatWatts(maxWatts)}W SCALE`}</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="最近两分钟总功率折线图">
+        <title>最近两分钟总功率</title>
+        {[0, 0.5, 1].map((ratio) => (
+          <g key={ratio}>
+            <line className="pit-power-chart-grid" x1={left} x2={width - right} y1={top + ratio * (height - top - bottom)} y2={top + ratio * (height - top - bottom)} />
+            <text className="pit-power-chart-axis" x={left - 5} y={top + ratio * (height - top - bottom) + 3} textAnchor="end">
+              {formatWatts(maxWatts * (1 - ratio))}
+            </text>
+          </g>
+        ))}
+        {paths.map((path, index) => <path key={index} className="pit-power-chart-line" d={path} />)}
+        {latest ? <circle className="pit-power-chart-dot" cx={x(latest.at)} cy={y(latest.watts ?? 0)} r="3" /> : null}
+        <text className="pit-power-chart-axis" x={left} y={height - 2}>-2 MIN</text>
+        <text className="pit-power-chart-axis" x={width - right} y={height - 2} textAnchor="end">NOW</text>
+      </svg>
+      {usable.length < 2 ? <span className="pit-power-chart-empty">正在收集实时功率样本…</span> : null}
+    </div>
+  );
+}
+
+function nicePowerMaximum(value: number) {
+  if (value <= 0) return 10;
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  return Math.max(10, Math.ceil(value / magnitude) * magnitude);
 }

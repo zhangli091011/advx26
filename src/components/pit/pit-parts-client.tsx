@@ -50,7 +50,7 @@ export function PitPartsClient() {
             </button>
           )),
         )}
-        <span className="pit-comp-note">库存计数来自设备 MQTT 上报</span>
+        <span className="pit-comp-note">库存计数来自设备长连接上报</span>
       </Panel>
 
       {/* 左下：采购清单 */}

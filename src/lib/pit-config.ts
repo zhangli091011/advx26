@@ -2,15 +2,7 @@ import "server-only";
 
 import fs from "node:fs";
 import path from "node:path";
-import {
-  environmentPitConfig,
-  extractLegacyChannelHints,
-  HOME_ASSISTANT_TOKEN_ENV,
-  isLegacyPitConfig,
-  parseStoredPitConfig,
-  resolvePitConfigEnvironment,
-  type StoredPitConfig,
-} from "@/lib/pit-config-model";
+import { environmentPitConfig, parseStoredPitConfig, type StoredPitConfig } from "@/lib/pit-config-model";
 
 const CONFIG_FILE = "pit-config.json";
 
@@ -21,31 +13,13 @@ export function getPitConfigPath() {
   return path.join(directory, CONFIG_FILE);
 }
 
-export function loadStoredPitConfig(): StoredPitConfig {
+export function loadPitConfig(): StoredPitConfig {
   const filePath = getPitConfigPath();
-  if (!fs.existsSync(filePath)) return storedEnvironmentPitConfig();
+  if (!fs.existsSync(filePath)) return environmentPitConfig();
   try {
     return parseStoredPitConfig(JSON.parse(fs.readFileSync(filePath, "utf8")));
   } catch (error) {
     throw new Error(`无法读取 ${filePath}：${error instanceof Error ? error.message : String(error)}`);
-  }
-}
-
-export function loadPitConfig(): StoredPitConfig {
-  return resolvePitConfigEnvironment(loadStoredPitConfig());
-}
-
-export function loadPitConfigMetadata() {
-  const filePath = getPitConfigPath();
-  if (!fs.existsSync(filePath)) return { migrationRequired: false, legacyChannels: [] };
-  try {
-    const value: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return {
-      migrationRequired: isLegacyPitConfig(value),
-      legacyChannels: extractLegacyChannelHints(value),
-    };
-  } catch {
-    return { migrationRequired: false, legacyChannels: [] };
   }
 }
 
@@ -58,20 +32,23 @@ export function loadPitConfigFallback() {
   }
 }
 
-export function loadStoredPitConfigFallback() {
-  try {
-    return loadStoredPitConfig();
-  } catch (error) {
-    console.error(`[config] ${error instanceof Error ? error.message : String(error)}，使用环境变量回退`);
-    return storedEnvironmentPitConfig();
-  }
-}
-
 export function savePitConfig(config: StoredPitConfig) {
   const filePath = getPitConfigPath();
   const directory = path.dirname(filePath);
   const temporary = `${filePath}.${process.pid}.tmp`;
   fs.mkdirSync(directory, { recursive: true });
+  if (fs.existsSync(filePath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(filePath, "utf8")) as { version?: unknown };
+      const backup = path.join(directory, "pit-config.legacy.backup.json");
+      if (existing.version !== 3 && !fs.existsSync(backup)) fs.copyFileSync(filePath, backup);
+      const previous = path.join(directory, "pit-config.previous.backup.json");
+      fs.copyFileSync(filePath, previous);
+      fs.chmodSync(previous, 0o600);
+    } catch {
+      // The regular save path will replace an invalid file only after validated input is available.
+    }
+  }
   fs.writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   fs.renameSync(temporary, filePath);
   try {
@@ -79,11 +56,4 @@ export function savePitConfig(config: StoredPitConfig) {
   } catch {
     // Windows does not implement POSIX file modes.
   }
-}
-
-function storedEnvironmentPitConfig() {
-  return environmentPitConfig({
-    ...process.env,
-    [HOME_ASSISTANT_TOKEN_ENV]: undefined,
-  });
 }

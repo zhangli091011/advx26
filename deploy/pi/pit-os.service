@@ -1,0 +1,34 @@
+[Unit]
+Description=ADVX PIT OS Next.js server
+After=network-online.target pit-device-gateway.service pit-media.service
+Requires=pit-device-gateway.service
+Wants=network-online.target
+Wants=pit-media.service
+
+[Service]
+Type=simple
+User=pit-os
+Group=pit-os
+SupplementaryGroups=video
+WorkingDirectory=/opt/pit-os/current
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=3000
+Environment=PIT_CONFIG_DIR=/var/lib/pit-os
+Environment=NODE_OPTIONS=--max-old-space-size=512
+Environment=PIT_GATEWAY_URL=ws://127.0.0.1:8765
+Environment=PIT_GATEWAY_CLIENT_ID=pithub-main
+EnvironmentFile=/etc/pit-os/gateway.env
+EnvironmentFile=-/etc/pit-os/pit-os.env
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/pit-os
+
+[Install]
+WantedBy=multi-user.target

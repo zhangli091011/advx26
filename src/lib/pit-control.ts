@@ -1,7 +1,10 @@
 export type PitControlCommand =
   | { action: "power"; target: string; on: boolean }
   | { action: "locate"; target: string }
-  | { action: "locate-unit"; target: string };
+  | { action: "locate-unit"; target: string }
+  | { action: "can-serial"; target: "main"; command: CanSerialCommand };
+
+export type CanSerialCommand = "status" | "stats" | "devices" | "trace-10" | "clear";
 
 export type PitControlInventory = {
   channels: string[];
@@ -40,6 +43,14 @@ export function parsePitControl(
       return { error: "无效的储物单元" };
     }
     return { command: { action, target } };
+  }
+
+  if (action === "can-serial") {
+    const commands: CanSerialCommand[] = ["status", "stats", "devices", "trace-10", "clear"];
+    if (target !== "main" || typeof body.command !== "string" || !commands.includes(body.command as CanSerialCommand)) {
+      return { error: "无效的 CAN 串口调试指令" };
+    }
+    return { command: { action, target, command: body.command as CanSerialCommand } };
   }
 
   return { error: "未知指令" };

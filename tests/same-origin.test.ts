@@ -25,12 +25,3 @@ test("rejects external origins and ambiguous non-browser requests", () => {
   assert.equal(isSameOrigin(request("http://127.0.0.1:41234/api")), false);
   assert.equal(isSameOrigin(request("http://127.0.0.1:41234/api", undefined, "same-origin")), true);
 });
-
-test("uses the browser-visible Host header when the server binds to 0.0.0.0", () => {
-  assert.equal(isSameOrigin(new Request("http://0.0.0.0:3001/api/pit/config", {
-    headers: {
-      host: "localhost:3001",
-      origin: "http://localhost:3001",
-    },
-  })), true);
-});

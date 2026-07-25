@@ -20,13 +20,7 @@ export function isSameOrigin(request: Request) {
   if (!origin) return fetchSite === "same-origin";
   try {
     const source = new URL(origin);
-    const requestUrl = new URL(request.url);
-    const host = request.headers.get("host");
-    const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",", 1)[0]?.trim();
-    const protocol = forwardedProtocol === "http" || forwardedProtocol === "https"
-      ? `${forwardedProtocol}:`
-      : requestUrl.protocol;
-    const destination = host ? new URL(`${protocol}//${host}`) : requestUrl;
+    const destination = new URL(request.url);
     if (source.origin === destination.origin) return true;
 
     // Electron may normalize the same loopback server between localhost and

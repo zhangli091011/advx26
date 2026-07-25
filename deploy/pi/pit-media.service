@@ -1,0 +1,22 @@
+[Unit]
+Description=ADVX PIT OS RTMP and WebRTC media server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pit-os
+Group=pit-os
+WorkingDirectory=/var/lib/pit-os
+ExecStart=/usr/local/bin/mediamtx /etc/pit-os/mediamtx.yml
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/etc/pit-os/mediamtx.yml
+ReadWritePaths=/var/lib/pit-os
+
+[Install]
+WantedBy=multi-user.target

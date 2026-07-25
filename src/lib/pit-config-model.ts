@@ -1,341 +1,236 @@
-import {
-  isControlEntityId,
-  isSensorEntityId,
-} from "@/lib/home-assistant-model";
-import type {
-  LegacyChannelHint,
-  LocalNetworkView,
-  PitConfigView,
-} from "@/types/pit-config";
-
-export const DEFAULT_HOME_ASSISTANT_URL = "http://192.168.66.34:8123";
-export const HOME_ASSISTANT_TOKEN_ENV = "HOME_ASSISTANT_ACCESS_TOKEN";
-
-export type PitChannelId = `CH${1 | 2 | 3 | 4 | 5 | 6 | 7 | 8}`;
-export type HomeAssistantMode = "observe" | "active";
-
-export type HomeAssistantBinding = {
-  channelId: PitChannelId;
-  name: string;
-  zone: string;
-  controlEntityId: `switch.${string}` | `light.${string}`;
-  powerEntityId?: `sensor.${string}`;
-  voltageEntityId?: `sensor.${string}`;
-  currentEntityId?: `sensor.${string}`;
-};
+import { parseHomeAssistantOutlets, validateHomeAssistantUrl, type HomeAssistantOutletConfig } from "@/lib/home-assistant-config";
+import type { PitConfigView } from "@/types/pit-config";
 
 export type StoredPitConfig = {
-  version: 2;
-  mqtt: { url: string; username: string; password: string };
+  version: 3;
+  team: { number: number; name: string };
+  gateway: { url: string; clientId: string; token: string };
   homeAssistant: {
     baseUrl: string;
     accessToken: string;
-    defaultAreaId?: string;
-    mode: HomeAssistantMode;
-    bindings: HomeAssistantBinding[];
+    pollIntervalMs: number;
+    migrationRequired: boolean;
+    outlets: HomeAssistantOutletConfig[];
   };
 };
 
-export function environmentPitConfig(
-  env: Record<string, string | undefined> = process.env,
-): StoredPitConfig {
+export function environmentPitConfig(env: Record<string, string | undefined> = process.env): StoredPitConfig {
   return {
-    version: 2,
-    mqtt: {
-      url: env.PIT_MQTT_URL ?? "mqtt://127.0.0.1:1883",
-      username: env.PIT_MQTT_USERNAME ?? "",
-      password: env.PIT_MQTT_PASSWORD ?? "",
+    version: 3,
+    team: {
+      number: boundedInteger(env.PIT_TEAM_NUMBER, 8214, 1, 99_999),
+      name: optionalText(env.PIT_TEAM_NAME),
+    },
+    gateway: {
+      url: env.PIT_GATEWAY_URL ?? "ws://127.0.0.1:8765",
+      clientId: env.PIT_GATEWAY_CLIENT_ID ?? "pithub-main",
+      token: env.PIT_GATEWAY_TOKEN ?? "",
     },
     homeAssistant: {
-      baseUrl: normalizeHomeAssistantBaseUrl(env.HOME_ASSISTANT_URL ?? DEFAULT_HOME_ASSISTANT_URL),
-      accessToken: optionalText(env[HOME_ASSISTANT_TOKEN_ENV]),
-      defaultAreaId: optionalText(env.HOME_ASSISTANT_DEFAULT_AREA_ID) || undefined,
-      mode: env.HOME_ASSISTANT_MODE === "active" ? "active" : "observe",
-      bindings: parseBindingsFromEnvironment(env.HOME_ASSISTANT_BINDINGS_JSON),
+      baseUrl: normalizeOptionalHomeAssistantUrl(env.HOME_ASSISTANT_URL),
+      accessToken: env.HOME_ASSISTANT_ACCESS_TOKEN ?? env.HOME_ASSISTANT_TOKEN ?? "",
+      pollIntervalMs: boundedInteger(env.HOME_ASSISTANT_POLL_INTERVAL_MS, 10_000, 5_000, 300_000),
+      migrationRequired: false,
+      outlets: parseEnvironmentOutlets(env),
     },
   };
 }
 
 export function parseStoredPitConfig(value: unknown): StoredPitConfig {
-  if (!isRecord(value) || !isRecord(value.mqtt)) {
-    throw new Error("配置文件结构无效");
-  }
-  const mqtt = parseMqttConfig(value.mqtt);
-  if (value.version === 1 || isRecord(value.miot)) {
-    return {
-      version: 2,
-      mqtt,
-      homeAssistant: {
-        baseUrl: DEFAULT_HOME_ASSISTANT_URL,
-        accessToken: "",
-        mode: "observe",
-        bindings: [],
-      },
-    };
-  }
-  if (value.version !== 2 || !isRecord(value.homeAssistant)) {
-    throw new Error("配置版本不受支持");
-  }
-  return {
-    version: 2,
-    mqtt,
-    homeAssistant: parseHomeAssistantConfig(value.homeAssistant),
-  };
+  if (!isRecord(value)) throw new Error("配置文件结构无效");
+  if (value.version === 3) return parseVersion3(value);
+  if (value.version === 2) return migrateVersion2(value);
+  if (value.version === 1 || isRecord(value.miot)) return migrateVersion1(value);
+  throw new Error("不支持的配置文件版本");
 }
 
-export function resolvePitConfigEnvironment(
-  config: StoredPitConfig,
-  env: Record<string, string | undefined> = process.env,
-): StoredPitConfig {
-  const accessToken = optionalText(env[HOME_ASSISTANT_TOKEN_ENV]);
-  return accessToken
-    ? {
-        ...config,
-        homeAssistant: { ...config.homeAssistant, accessToken },
-      }
-    : config;
-}
-
-export function mergePitConfigInput(
-  input: unknown,
-  current: StoredPitConfig,
-  env: Record<string, string | undefined> = process.env,
-): StoredPitConfig {
-  if (!isRecord(input) || !isRecord(input.mqtt) || !isRecord(input.homeAssistant)) {
-    throw new Error("请求配置结构无效");
-  }
-  const mqttUrl = requiredText(input.mqtt.url, "MQTT URL 不能为空");
-  validateMqttUrl(mqttUrl);
-
-  const baseUrl = normalizeHomeAssistantBaseUrl(
-    requiredText(input.homeAssistant.baseUrl, "Home Assistant 地址不能为空"),
-  );
-  const baseChanged = baseUrl !== current.homeAssistant.baseUrl;
-  const environmentToken = optionalText(env[HOME_ASSISTANT_TOKEN_ENV]);
-  const submittedToken = optionalText(input.homeAssistant.accessToken);
-  if (baseChanged && environmentToken) {
-    throw new Error("Home Assistant 令牌由环境变量托管；修改地址时必须同步修改环境变量并重启");
-  }
-  if (baseChanged && !submittedToken) {
+export function mergePitConfigInput(input: unknown, current: StoredPitConfig): StoredPitConfig {
+  if (!isRecord(input) || !isRecord(input.team) || !isRecord(input.gateway) || !isRecord(input.homeAssistant)) throw new Error("请求配置结构无效");
+  const outlets = parseHomeAssistantOutlets(input.homeAssistant.outlets);
+  const nextBaseUrl = normalizeOptionalHomeAssistantUrl(input.homeAssistant.baseUrl);
+  const submittedAccessToken = optionalText(input.homeAssistant.accessToken);
+  if (nextBaseUrl !== current.homeAssistant.baseUrl && current.homeAssistant.accessToken && !submittedAccessToken) {
     throw new Error("修改 Home Assistant 地址时必须重新输入访问令牌");
   }
-
-  const accessToken = input.homeAssistant.clearAccessToken === true
-    ? ""
-    : submittedToken || (baseChanged ? "" : current.homeAssistant.accessToken);
-  const mode = input.homeAssistant.mode === "active" ? "active" : "observe";
-  const bindings = parseHomeAssistantBindings(input.homeAssistant.bindings);
-  if (input.migrationRequired === true && Array.isArray(input.legacyChannels)) {
-    const mapped = new Set(bindings.map((binding) => binding.channelId));
-    const missing = input.legacyChannels.flatMap((item) => {
-      if (!isRecord(item)) return [];
-      const channelId = optionalText(item.channelId);
-      return isPitChannelId(channelId) && !mapped.has(channelId) ? [channelId] : [];
-    });
-    if (missing.length) {
-      throw new Error(`保存版本 2 前必须完成旧通道映射：${missing.join("、")}`);
-    }
-  }
-  if (mode === "active" && !accessToken && !environmentToken) {
-    throw new Error("活动模式必须配置 Home Assistant 访问令牌");
-  }
-  if (mode === "active" && bindings.length === 0) {
-    throw new Error("活动模式至少需要映射一个电源通道");
-  }
-
-  return {
-    version: 2,
-    mqtt: {
-      url: mqttUrl,
-      username: optionalText(input.mqtt.username),
-      password: input.mqtt.clearPassword === true
-        ? ""
-        : optionalText(input.mqtt.password) || current.mqtt.password,
+  return parseVersion3({
+    version: 3,
+    team: {
+      number: requiredTeamNumber(input.team.number),
+      name: teamName(input.team.name),
+    },
+    gateway: {
+      url: input.gateway.url,
+      clientId: optionalText(input.gateway.clientId),
+      token: input.gateway.clearToken === true ? "" : optionalText(input.gateway.token) || current.gateway.token,
     },
     homeAssistant: {
-      baseUrl,
-      accessToken,
-      defaultAreaId: validateAreaId(optionalText(input.homeAssistant.defaultAreaId)),
-      mode,
-      bindings,
+      baseUrl: nextBaseUrl,
+      accessToken: input.homeAssistant.clearAccessToken === true
+        ? ""
+        : optionalText(input.homeAssistant.accessToken) || current.homeAssistant.accessToken,
+      pollIntervalMs: input.homeAssistant.pollIntervalMs,
+      migrationRequired: outlets.some((outlet) => !outlet.switchEntityId),
+      outlets,
     },
-  };
+  });
 }
 
-export function publicPitConfig(
-  config: StoredPitConfig,
-  configPath: string,
-  options: {
-    migrationRequired?: boolean;
-    legacyChannels?: LegacyChannelHint[];
-    localNetwork?: LocalNetworkView;
-    env?: Record<string, string | undefined>;
-  } = {},
-): PitConfigView {
-  const env = options.env ?? process.env;
-  const tokenManagedByEnvironment = Boolean(optionalText(env[HOME_ASSISTANT_TOKEN_ENV]));
+export function publicPitConfig(config: StoredPitConfig, configPath: string): PitConfigView {
   return {
-    version: 2,
     configPath,
     restartRequired: true,
-    migrationRequired: options.migrationRequired === true,
-    legacyChannels: options.legacyChannels ?? [],
-    localNetwork: options.localNetwork ?? {
-      hostname: "",
-      preferredIpv4: "",
-      ipv4Addresses: [],
-    },
-    mqtt: {
-      url: config.mqtt.url,
-      username: config.mqtt.username,
-      password: "",
-      passwordConfigured: Boolean(config.mqtt.password),
+    team: { ...config.team },
+    gateway: {
+      url: config.gateway.url,
+      clientId: config.gateway.clientId,
+      token: "",
+      tokenConfigured: Boolean(config.gateway.token || process.env.PIT_GATEWAY_TOKEN),
     },
     homeAssistant: {
       baseUrl: config.homeAssistant.baseUrl,
       accessToken: "",
       accessTokenConfigured: Boolean(config.homeAssistant.accessToken),
-      tokenManagedByEnvironment,
-      mode: config.homeAssistant.mode,
-      defaultAreaId: config.homeAssistant.defaultAreaId ?? "",
-      bindings: config.homeAssistant.bindings.map((binding) => ({ ...binding })),
+      pollIntervalMs: config.homeAssistant.pollIntervalMs,
+      migrationRequired: config.homeAssistant.migrationRequired,
+      outlets: config.homeAssistant.outlets.map((outlet) => ({
+        id: outlet.id,
+        name: outlet.name,
+        zone: outlet.zone,
+        switchEntityId: outlet.switchEntityId,
+        wattsEntityId: outlet.wattsEntityId ?? "",
+        voltsEntityId: outlet.voltsEntityId ?? "",
+        ampsEntityId: outlet.ampsEntityId ?? "",
+      })),
     },
   };
 }
 
-export function normalizeHomeAssistantBaseUrl(value: string) {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    throw new Error("Home Assistant 地址格式无效");
-  }
-  if (!["http:", "https:"].includes(url.protocol)) {
-    throw new Error("Home Assistant 地址仅支持 HTTP 或 HTTPS");
-  }
-  if (url.username || url.password) {
-    throw new Error("Home Assistant 地址不能包含用户名或密码");
-  }
-  return url.origin;
+function parseVersion3(value: Record<string, unknown>): StoredPitConfig {
+  if (!isRecord(value.gateway) || !isRecord(value.homeAssistant)) throw new Error("配置文件结构无效");
+  const gatewayUrl = requiredText(value.gateway.url, "设备网关 URL 不能为空");
+  validateGatewayUrl(gatewayUrl);
+  return {
+    version: 3,
+    team: parseTeam(value.team),
+    gateway: {
+      url: gatewayUrl,
+      clientId: requiredText(value.gateway.clientId, "设备网关客户端 ID 不能为空"),
+      token: optionalText(value.gateway.token),
+    },
+    homeAssistant: {
+      baseUrl: normalizeOptionalHomeAssistantUrl(value.homeAssistant.baseUrl),
+      accessToken: optionalText(value.homeAssistant.accessToken),
+      pollIntervalMs: boundedInteger(value.homeAssistant.pollIntervalMs, 10_000, 5_000, 300_000),
+      migrationRequired: value.homeAssistant.migrationRequired === true,
+      outlets: parseHomeAssistantOutlets(value.homeAssistant.outlets),
+    },
+  };
 }
 
-export function extractLegacyChannelHints(value: unknown): LegacyChannelHint[] {
-  if (!isRecord(value) || !(value.version === 1 || isRecord(value.miot))) return [];
-  if (!isRecord(value.miot) || !Array.isArray(value.miot.outlets)) return [];
-  const ids = new Set<string>();
-  return value.miot.outlets.flatMap((outlet) => {
-    if (!isRecord(outlet)) return [];
-    const channelId = optionalText(outlet.id);
-    if (!isPitChannelId(channelId) || ids.has(channelId)) return [];
-    ids.add(channelId);
+function migrateVersion2(value: Record<string, unknown>): StoredPitConfig {
+  if (!isRecord(value.homeAssistant)) throw new Error("旧配置文件结构无效");
+  const outlets = Array.isArray(value.homeAssistant.outlets)
+    ? value.homeAssistant.outlets
+    : migrateBindings(value.homeAssistant.bindings);
+  return parseVersion3({
+    version: 3,
+    team: value.team,
+    gateway: { url: "ws://127.0.0.1:8765", clientId: "pithub-main", token: "" },
+    homeAssistant: {
+      baseUrl: value.homeAssistant.baseUrl,
+      accessToken: value.homeAssistant.accessToken,
+      pollIntervalMs: value.homeAssistant.pollIntervalMs,
+      migrationRequired: false,
+      outlets,
+    },
+  });
+}
+
+function migrateVersion1(value: Record<string, unknown>): StoredPitConfig {
+  if (!isRecord(value.mqtt) || !isRecord(value.miot)) throw new Error("旧配置文件结构无效");
+  const legacyOutlets = Array.isArray(value.miot.outlets) ? value.miot.outlets : [];
+  const outlets = legacyOutlets.flatMap((item) => {
+    if (!isRecord(item) || !/^CH[1-8]$/.test(optionalText(item.id))) return [];
     return [{
-      channelId,
-      name: optionalText(outlet.name) || channelId,
-      zone: optionalText(outlet.zone),
+      id: optionalText(item.id),
+      name: optionalText(item.name) || `Home Assistant 插座 ${optionalText(item.id)}`,
+      zone: optionalText(item.zone) || "Home Assistant",
+      switchEntityId: "",
     }];
   });
-}
-
-export function isLegacyPitConfig(value: unknown) {
-  return isRecord(value) && (value.version === 1 || isRecord(value.miot));
-}
-
-function parseHomeAssistantConfig(
-  value: Record<string, unknown>,
-): StoredPitConfig["homeAssistant"] {
-  const mode: HomeAssistantMode = value.mode === "active" ? "active" : "observe";
-  const accessToken = optionalText(value.accessToken);
-  const bindings = parseHomeAssistantBindings(value.bindings);
-  if (mode === "active" && bindings.length === 0) {
-    throw new Error("活动模式至少需要映射一个电源通道");
-  }
   return {
-    baseUrl: normalizeHomeAssistantBaseUrl(
-      requiredText(value.baseUrl, "Home Assistant 地址不能为空"),
-    ),
-    accessToken,
-    defaultAreaId: validateAreaId(optionalText(value.defaultAreaId)),
-    mode,
-    bindings,
+    version: 3,
+    team: { number: 8214, name: "" },
+    gateway: { url: "ws://127.0.0.1:8765", clientId: "pithub-main", token: "" },
+    homeAssistant: {
+      baseUrl: "",
+      accessToken: "",
+      pollIntervalMs: boundedInteger(value.miot.pollIntervalMs, 10_000, 5_000, 300_000),
+      migrationRequired: outlets.length > 0,
+      outlets: parseHomeAssistantOutlets(outlets),
+    },
   };
 }
 
-function parseHomeAssistantBindings(value: unknown): HomeAssistantBinding[] {
-  if (!Array.isArray(value)) throw new Error("Home Assistant 通道映射必须是数组");
-  const channelIds = new Set<string>();
-  const entityIds = new Set<string>();
-  return value.map((item, index) => {
-    if (!isRecord(item)) throw new Error(`Home Assistant 映射 #${index + 1} 无效`);
-    const channelId = requiredText(item.channelId, `映射 #${index + 1} 缺少通道`);
-    if (!isPitChannelId(channelId)) throw new Error(`映射 #${index + 1} 通道必须为 CH1-CH8`);
-    if (channelIds.has(channelId)) throw new Error(`电源通道重复：${channelId}`);
-    channelIds.add(channelId);
-    const controlEntityId = requiredText(item.controlEntityId, `${channelId} 缺少控制实体`);
-    if (!isControlEntityId(controlEntityId)) {
-      throw new Error(`${channelId} 控制实体必须是 switch.* 或 light.*`);
-    }
-    if (entityIds.has(controlEntityId)) throw new Error(`控制实体重复：${controlEntityId}`);
-    entityIds.add(controlEntityId);
-    return {
-      channelId,
-      name: requiredText(item.name, `${channelId} 名称不能为空`),
-      zone: optionalText(item.zone),
-      controlEntityId,
-      powerEntityId: optionalSensor(item.powerEntityId, channelId, "功率"),
-      voltageEntityId: optionalSensor(item.voltageEntityId, channelId, "电压"),
-      currentEntityId: optionalSensor(item.currentEntityId, channelId, "电流"),
-    };
-  });
-}
-
-function parseBindingsFromEnvironment(value: string | undefined) {
-  if (!value) return [];
+function validateGatewayUrl(value: string) {
   try {
-    return parseHomeAssistantBindings(JSON.parse(value));
-  } catch (error) {
-    throw new Error(
-      `HOME_ASSISTANT_BINDINGS_JSON 无效：${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-}
-
-function parseMqttConfig(value: Record<string, unknown>) {
-  const url = requiredText(value.url, "MQTT URL 不能为空");
-  validateMqttUrl(url);
-  return {
-    url,
-    username: optionalText(value.username),
-    password: optionalText(value.password),
-  };
-}
-
-function optionalSensor(value: unknown, channelId: string, label: string) {
-  const entityId = optionalText(value);
-  if (!entityId) return undefined;
-  if (!isSensorEntityId(entityId)) throw new Error(`${channelId} ${label}实体必须是 sensor.*`);
-  return entityId as `sensor.${string}`;
-}
-
-function validateMqttUrl(value: string) {
-  let url: URL;
-  try {
-    url = new URL(value);
+    const url = new URL(value);
+    if (!["ws:", "wss:"].includes(url.protocol)) throw new Error();
   } catch {
-    throw new Error("MQTT URL 格式无效");
-  }
-  if (!["mqtt:", "mqtts:", "ws:", "wss:"].includes(url.protocol)) {
-    throw new Error("MQTT URL 仅支持 mqtt、mqtts、ws 或 wss");
+    throw new Error("设备网关 URL 仅支持 ws 或 wss");
   }
 }
 
-function validateAreaId(value: string) {
-  if (!value) return undefined;
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) throw new Error("Home Assistant 区域 ID 无效");
-  return value;
+function normalizeOptionalHomeAssistantUrl(value: unknown) {
+  const result = optionalText(value);
+  return result ? validateHomeAssistantUrl(result) : "";
 }
 
-function isPitChannelId(value: string): value is PitChannelId {
-  return /^CH[1-8]$/.test(value);
+function parseTeam(value: unknown) {
+  if (value === undefined) return { number: 8214, name: "" };
+  if (!isRecord(value)) throw new Error("赛队配置结构无效");
+  return { number: requiredTeamNumber(value.number), name: teamName(value.name) };
+}
+
+function requiredTeamNumber(value: unknown) {
+  const number = typeof value === "number" ? value : Number(value);
+  if (!Number.isInteger(number) || number < 1 || number > 99_999) throw new Error("FRC 队号必须是 1 到 99999 的整数");
+  return number;
+}
+
+function teamName(value: unknown) {
+  const name = optionalText(value);
+  if (name.length > 80) throw new Error("赛队名称不能超过 80 个字符");
+  return name;
+}
+
+function parseJsonArray(value: string | undefined) {
+  if (!value?.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) throw new Error();
+    return parsed;
+  } catch {
+    throw new Error("HOME_ASSISTANT_OUTLETS_JSON 必须是有效 JSON 数组");
+  }
+}
+
+function parseEnvironmentOutlets(env: Record<string, string | undefined>) {
+  if (env.HOME_ASSISTANT_OUTLETS_JSON?.trim()) return parseHomeAssistantOutlets(parseJsonArray(env.HOME_ASSISTANT_OUTLETS_JSON));
+  return parseHomeAssistantOutlets(migrateBindings(parseJsonArray(env.HOME_ASSISTANT_BINDINGS_JSON)));
+}
+
+function migrateBindings(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => isRecord(item) ? {
+    id: item.channelId,
+    name: item.name,
+    zone: item.zone,
+    switchEntityId: item.controlEntityId,
+    wattsEntityId: item.powerEntityId,
+    voltsEntityId: item.voltageEntityId,
+    ampsEntityId: item.currentEntityId,
+  } : item);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -343,11 +238,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function requiredText(value: unknown, message: string) {
-  const text = optionalText(value);
-  if (!text) throw new Error(message);
-  return text;
+  const result = optionalText(value);
+  if (!result) throw new Error(message);
+  return result;
 }
 
 function optionalText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function boundedInteger(value: unknown, fallback: number, min: number, max: number) {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isInteger(number) && number >= min && number <= max ? number : fallback;
 }

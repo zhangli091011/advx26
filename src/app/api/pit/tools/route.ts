@@ -17,22 +17,23 @@ export async function POST(request: Request) {
   try {
     const text = await request.text();
     if (text.length > 32 * 1024) return apiError("请求过大", 413);
-    const body = JSON.parse(text) as { action?: unknown; operation?: unknown; slot?: unknown };
+    const body = JSON.parse(text) as { action?: unknown; operation?: unknown; borrower?: unknown; tool?: unknown; id?: unknown };
     const hub = getPitHub();
-    if (body.action === "start-session") return apiSuccess(hub.startToolSession(body.operation));
+    if (body.action === "start-session") return apiSuccess(await hub.startToolSession(body.operation, body.borrower));
     if (body.action === "cancel-session") {
-      hub.cancelToolSession();
+      await hub.cancelToolSession();
       return apiSuccess({ cancelled: true });
     }
-    if (body.action === "configure") return apiSuccess(hub.configureTool(body.slot));
+    if (body.action === "configure") return apiSuccess(hub.configureTool(body.tool));
+    if (body.action === "remove") return apiSuccess(hub.removeTool(body.id));
     if (body.action === "sync-leds") {
       const sent = await hub.syncToolLeds();
-      return sent ? apiSuccess({ sent: true }) : apiError("MQTT 未连接，LED 同步失败", 503);
+      return sent ? apiSuccess({ sent: true }) : apiError("设备网关未连接，LED 同步失败", 503);
     }
     return apiError("未知工具操作", 400);
   } catch (error) {
     const message = error instanceof Error ? error.message : "工具操作失败";
-    const status = /已有|重复|已经|不在位/.test(message) ? 409 : 400;
+    const status = /设备网关|相机未就绪|下发失败/.test(message) ? 503 : /已有|重复|已经|不在位/.test(message) ? 409 : 400;
     return apiError(message, status);
   }
 }

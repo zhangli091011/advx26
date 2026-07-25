@@ -1,0 +1,51 @@
+logLevel: info
+logDestinations: [stdout]
+
+api: true
+apiAddress: 127.0.0.1:9997
+apiAllowOrigins: []
+
+rtsp: false
+rtmp: true
+rtmpAddress: :1935
+hls: false
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["*"]
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189
+srt: false
+moq: false
+
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: ["127.0.0.1", "::1"]
+    permissions:
+      - action: publish
+        path: dabai
+      - action: api
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+        path: "~^(dabai|cam2|cam3|cam4)$"
+  - user: pit-publisher
+    pass: __PUBLISH_PASSWORD__
+    ips: []
+    permissions:
+      - action: publish
+        path: "~^(cam2|cam3|cam4)$"
+
+pathDefaults:
+  source: publisher
+  overridePublisher: false
+  maxReaders: 4
+
+paths:
+  dabai:
+  cam2:
+  cam3:
+  cam4:

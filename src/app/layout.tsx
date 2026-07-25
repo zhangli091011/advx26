@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -7,14 +7,6 @@ export const metadata: Metadata = {
     template: "%s · PIT-OS",
   },
   description: "FRC 维修区智能工具箱：工具/零件定位、CAN 监控、电源控制、赛事信息",
-};
-
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  viewportFit: "cover",
-  colorScheme: "dark",
-  themeColor: "#0d0e10",
 };
 
 export default function RootLayout({

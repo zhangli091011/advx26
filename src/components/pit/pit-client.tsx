@@ -5,7 +5,8 @@ import { useEffect, useMemo, useState } from "react";
 import { PitUpdateButton } from "@/components/pit/pit-update-button";
 import { PitFullscreenButton } from "@/components/pit/pit-fullscreen-button";
 import { pitControl, usePitState, type PitTool } from "@/components/pit/use-pit-state";
-import type { PitState, RackUnit } from "@/types/pit";
+import { useMatchData } from "@/components/pit/use-match-data";
+import type { PitState } from "@/types/pit";
 
 /* 静态导航与展示常量（非设备状态） */
 const NAV = [
@@ -13,9 +14,11 @@ const NAV = [
   { zh: "工具管理", en: "TOOLS", icon: "tool", href: "/pit/tools" },
   { zh: "零件库存", en: "PARTS", icon: "part", href: "/pit/parts" },
   { zh: "CAN 监控", en: "CAN BUS", icon: "can", href: "/pit/can" },
+  { zh: "相机切换", en: "CAMERA", icon: "camera", href: "/pit/cameras" },
   { zh: "赛事信息", en: "MATCH", icon: "match", href: "/pit/match" },
   { zh: "电源控制", en: "POWER", icon: "power", href: "/pit/power" },
   { zh: "战队展示", en: "TEAM", icon: "team", href: "/pit/team" },
+  { zh: "系统性能", en: "SYSTEM", icon: "system", href: "/pit/system" },
   { zh: "测试管理", en: "SETTINGS", icon: "settings", href: "/pit/settings" },
 ];
 const EMPTY_TOOLS: PitTool[] = [];
@@ -34,9 +37,11 @@ function NavIcon({ kind, active }: { kind: string; active: boolean }) {
       {kind === "tool" && <>{rect(2, 8, 16, 4, -45)}{rect(8, 6, 4, 10, -45)}</>}
       {kind === "part" && <>{ring(10, 10, 6)}{rect(7, 7, 6, 6)}</>}
       {kind === "can" && <>{rect(1, 2, 18, 3)}{rect(1, 4, 3, 14)}{rect(16, 4, 3, 14)}{rect(1, 17, 18, 3)}</>}
+      {kind === "camera" && <>{rect(1, 4, 13, 12)}<polygon points="14,7 20,3 20,17 14,13" fill={c} />{ring(7.5, 10, 3)}</>}
       {kind === "match" && <>{rect(1, 1, 18, 10)}{rect(7, 14, 6, 3)}{rect(1, 8, 3, 6)}{rect(16, 8, 3, 6)}</>}
       {kind === "power" && <>{ring(10, 11, 7)}{rect(8, 0, 3, 10)}</>}
       {kind === "team" && <>{ring(4, 6, 3)}{ring(16, 6, 3)}{rect(1, 12, 6, 3)}{rect(13, 12, 6, 3)}</>}
+      {kind === "system" && <>{rect(1, 3, 18, 12)}{rect(7, 17, 6, 2)}<polyline points="4,11 7,8 10,12 13,6 16,9" fill="none" stroke={c} strokeWidth={2} /></>}
       {kind === "settings" && <>{ring(10, 10, 5)}{ring(10, 10, 2)}{rect(9, 0, 2, 4)}{rect(9, 16, 2, 4)}{rect(0, 9, 4, 2)}{rect(16, 9, 4, 2)}</>}
     </svg>
   );
@@ -60,8 +65,10 @@ function Panel({
 
 export function PitClient() {
   const { state, live } = usePitState();
+  const { data: matchData, loading: matchesLoading } = useMatchData();
   const [now, setNow] = useState<Date | null>(null);
   const [locating, setLocating] = useState<PitTool | null>(null);
+  const [locateError, setLocateError] = useState<string | null>(null);
 
   useEffect(() => {
     const initial = window.setTimeout(() => setNow(new Date()), 0);
@@ -82,7 +89,13 @@ export function PitClient() {
   const units = state?.units ?? [];
   const channels = state?.channels ?? [];
   const canDevices = state?.canDevices ?? [];
-  const brokerOnline = live && state?.connection.brokerConnected === true;
+  const gatewayOnline = live && state?.connection.gatewayConnected === true;
+  const teamNumber = matchData?.teamNumber ?? 8214;
+  const nextMatch = matchData?.matches.find((match) => (
+    !match.played
+    && match.estimatedTime !== null
+    && (match.red.teams.includes(teamNumber) || match.blue.teams.includes(teamNumber))
+  )) ?? null;
 
   const stats = useMemo(() => ({
     inCount: tools.filter((t) => t.state === "in").length,
@@ -117,8 +130,8 @@ export function PitClient() {
           <PitFullscreenButton />
           <PitUpdateButton />
           <div className="pit-chip">
-            <i style={{ background: brokerOnline ? "var(--pit-ok)" : "var(--pit-err)" }} />
-            <small>MQTT</small><strong>{brokerOnline ? "ONLINE" : "OFFLINE"}</strong>
+            <i style={{ background: gatewayOnline ? "var(--pit-ok)" : "var(--pit-err)" }} />
+            <small>LINK</small><strong>{gatewayOnline ? "ONLINE" : "OFFLINE"}</strong>
           </div>
           <div className="pit-chip">
             <i style={{ background: "var(--pit-accent)" }} />
@@ -135,7 +148,7 @@ export function PitClient() {
       {/* 左侧导航 */}
       <nav className="pit-nav">
         {NAV.map((item, i) => (
-          <Link key={item.en} href={item.href} className={`pit-nav-item ${i === 0 ? "active" : ""}`}>
+          <Link key={item.en} href={item.href} prefetch={item.href === "/pit/team" ? false : undefined} className={`pit-nav-item ${i === 0 ? "active" : ""}`}>
             <NavIcon kind={item.icon} active={i === 0} />
             <span>
               <span className="zh">{item.zh}</span>
@@ -152,7 +165,20 @@ export function PitClient() {
 
       {/* 下一场比赛 */}
       <Panel x={224} y={96} w={560} h={300} title="下一场比赛" en="NEXT MATCH">
-        <Unconfigured label="赛事 API 未配置" />
+        {nextMatch ? (
+          <>
+            <div className="pit-match-label">TEAM {teamNumber} · {matchData?.event.key}</div>
+            <div className="pit-match-num">{nextMatch.label}</div>
+            <div className="pit-countdown-label">预计开始</div>
+            <div className="pit-countdown" style={{ fontSize: 27 }}>
+              {new Date(nextMatch.estimatedTime! * 1000).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            </div>
+            <div className={`pit-alliance ${nextMatch.blue.teams.includes(teamNumber) ? "blue" : ""}`}>
+              <strong>{nextMatch.red.teams.includes(teamNumber) ? "RED ALLIANCE" : "BLUE ALLIANCE"}</strong>
+              <span className="teams">{(nextMatch.red.teams.includes(teamNumber) ? nextMatch.red.teams : nextMatch.blue.teams).join(" · ")}</span>
+            </div>
+          </>
+        ) : <Unconfigured label={matchesLoading ? "正在加载赛事数据…" : matchData ? `TEAM ${teamNumber} 当前赛事没有未完成场次` : "赛事数据源暂不可用"} />}
       </Panel>
 
       {/* CAN 总线 */}
@@ -180,7 +206,7 @@ export function PitClient() {
           <div key={c.id} className="pit-pwr-row" style={{ top: 61 + i * 56 }}>
             <span className="pit-pwr-name">{c.name}</span>
             <span className="pit-pwr-sub">
-              {`${c.id}  ·  ${c.amps === null ? "—A" : `${c.amps.toFixed(2)}A`}${c.provider === "home-assistant" ? `  ·  HA ${c.transport?.toUpperCase() ?? ""}` : ""}`}
+              {`${c.id}  ·  ${c.amps === null ? "—A" : `${c.amps.toFixed(2)}A`}${c.provider === "home-assistant" ? "  ·  HA REST" : ""}`}
             </span>
             <span className="pit-pwr-status" style={{ color: !c.online ? "var(--pit-err)" : c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>
               {!c.online ? "OFFLINE" : c.on ? "ON" : "OFF"}
@@ -207,7 +233,11 @@ export function PitClient() {
         <button
           type="button"
           className="pit-tool-locate-btn"
-          onClick={() => setLocating(tools.find((t) => t.state === "lost") ?? tools[0] ?? null)}
+          onClick={() => {
+            const tool = tools.find((item) => item.state === "lost") ?? tools[0];
+            if (!tool) return;
+            void pitControl("locate", tool.slot).then(() => { setLocateError(null); setLocating(tool); }).catch((error) => setLocateError(error instanceof Error ? error.message : "定位失败"));
+          }}
         >
           ◉ 指示灯寻物
         </button>
@@ -217,7 +247,7 @@ export function PitClient() {
             type="button"
             className="pit-tool-row"
             style={{ top: 105 + i * 64 }}
-            onClick={() => setLocating(t)}
+            onClick={() => void pitControl("locate", t.slot).then(() => { setLocateError(null); setLocating(t); }).catch((error) => setLocateError(error instanceof Error ? error.message : "定位失败"))}
           >
             <span className="pit-tool-slot">{t.slot}</span>
             <span className="pit-tool-name">{t.name}</span>
@@ -229,7 +259,7 @@ export function PitClient() {
         ))}
         {tools.length === 0 ? (
           <div style={{ position: "absolute", left: 29, top: 200, color: "var(--pit-text-2)", fontSize: 13 }}>
-            等待储存柜数据…（pit/esp32-a/tools/*）
+            尚未登记工具，请前往工具管理添加工具并分配 D1–D5 抽屉。
           </div>
         ) : null}
       </Panel>
@@ -277,13 +307,14 @@ export function PitClient() {
         <span className="live">赛事比分未配置</span>
         <span className="ai">
           {state?.scanLog[0]
-            ? `│  最近扫码：${state.scanLog[0].msg}  │  API ${live ? "在线" : "离线"} · MQTT ${brokerOnline ? "在线" : "离线"}`
-            : `│  等待视觉识别扫码事件…  │  API ${live ? "在线" : "离线"} · MQTT ${brokerOnline ? "在线" : "离线"}`}
+            ? `│  最近扫码：${state.scanLog[0].msg}  │  API ${live ? "在线" : "离线"} · 长连接 ${gatewayOnline ? "在线" : "离线"}`
+            : `│  等待视觉识别扫码事件…  │  API ${live ? "在线" : "离线"} · 长连接 ${gatewayOnline ? "在线" : "离线"}`}
         </span>
       </div>
 
       {/* 工具定位全屏覆盖层 */}
-      {locating ? <LocateOverlay tool={locating} tools={tools} units={units} scanLog={state?.scanLog ?? []} onClose={() => setLocating(null)} /> : null}
+      {locateError ? <div className="pit-dashboard-error">{locateError}</div> : null}
+      {locating ? <LocateOverlay tool={locating} tools={tools} scanLog={state?.scanLog ?? []} onClose={() => setLocating(null)} /> : null}
     </div>
   );
 }
@@ -292,36 +323,36 @@ function Unconfigured({ label }: { label: string }) {
   return <div style={{ position: "absolute", inset: "58px 24px 24px", display: "grid", placeItems: "center", color: "var(--pit-text-2)", fontSize: 14 }}>{label}</div>;
 }
 
-function LocateOverlay({ tool, tools, units, scanLog, onClose }: { tool: PitTool; tools: PitTool[]; units: RackUnit[]; scanLog: PitState["scanLog"]; onClose: () => void }) {
-  const targetUnit = tool.slot.split("-")[0];
-  const slotCells = tools.filter((item) => item.unit === targetUnit);
+function LocateOverlay({ tool, tools, scanLog, onClose }: { tool: PitTool; tools: PitTool[]; scanLog: PitState["scanLog"]; onClose: () => void }) {
+  const targetDrawer = tool.unit;
+  const drawerTools = tools.filter((item) => item.unit === targetDrawer);
 
   return (
     <div className="pit-locate" role="dialog" aria-modal="true" aria-label={`正在定位 ${tool.name}`}>
       <div className="pit-locate-banner">
         <h2>正在定位：{tool.name}</h2>
         <p>
-          LOCATING TOOL  ·  16U RACK / UNIT {targetUnit} / SLOT {tool.slot}  ·  LED BLINKING <i>▮▮▮</i>
+          LOCATING TOOL · DRAWER {targetDrawer} · ID {tool.slot} · DRAWER LED BLINKING <i>▮▮▮</i>
         </p>
         <button type="button" className="pit-locate-cancel" onClick={onClose}>✕ 取消</button>
       </div>
 
-      <div className="pit-rack-label">16U RACK · FRONT VIEW</div>
+      <div className="pit-rack-label">5-DRAWER TOOLBOX · FRONT VIEW</div>
       <div className="pit-rack-rail" style={{ left: 66 }} />
       <div className="pit-rack-rail" style={{ left: 1028 }} />
-      {units.map((unit, i) => (
-        <div key={unit.u} className={`pit-rack-unit ${unit.u === targetUnit ? "target" : ""}`} style={{ top: 160 + i * 104 }}>
-          <span className="u">{unit.u}</span>
-          <span className="nm">{unit.name || "未配置"}</span>
-          <span className="note">{unit.note || "单元信息未配置"}</span>
-          {unit.u === targetUnit ? <span className="here"><i>◉</i> 这个单元</span> : null}
+      {["D1", "D2", "D3", "D4", "D5"].map((drawer, i) => (
+        <div key={drawer} className={`pit-rack-unit ${drawer === targetDrawer ? "target" : ""}`} style={{ top: 190 + i * 145, height: 128 }}>
+          <span className="u">{drawer}</span>
+          <span className="nm">工具抽屉 {i + 1}</span>
+          <span className="note">{tools.filter((item) => item.unit === drawer).length} 件工具</span>
+          {drawer === targetDrawer ? <span className="here"><i>◉</i> 指示灯闪烁中</span> : null}
           <span className="handle" />
         </div>
       ))}
 
       <div className="pit-locate-detail">
-        <h3>{targetUnit} 单元内部 · 工具位</h3>
-        {slotCells.map((c, i) => {
+        <h3>{targetDrawer} 抽屉内部 · 工具清单</h3>
+        {drawerTools.slice(0, 6).map((c, i) => {
           const isTarget = c.slot === tool.slot;
           return (
             <div

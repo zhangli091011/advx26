@@ -18,12 +18,17 @@ test("accepts known, well-formed control commands", () => {
   assert.deepEqual(parsePitControl({ action: "locate-unit", target: "U16" }, inventory), {
     command: { action: "locate-unit", target: "U16" },
   });
+  assert.deepEqual(parsePitControl({ action: "can-serial", target: "main", command: "trace-10" }, inventory), {
+    command: { action: "can-serial", target: "main", command: "trace-10" },
+  });
 });
 
 test("rejects unknown targets and topic injection", () => {
   assert.ok("error" in parsePitControl({ action: "power", target: "CH9", on: true }, inventory));
   assert.ok("error" in parsePitControl({ action: "locate", target: "U1-01/extra" }, inventory));
   assert.ok("error" in parsePitControl({ action: "locate-unit", target: "U0" }, inventory));
+  assert.ok("error" in parsePitControl({ action: "can-serial", target: "main", command: "reboot" }, inventory));
+  assert.ok("error" in parsePitControl({ action: "can-serial", target: "../../shell", command: "status" }, inventory));
 });
 
 test("requires a boolean power state", () => {

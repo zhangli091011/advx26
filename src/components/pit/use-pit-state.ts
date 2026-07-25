@@ -7,7 +7,7 @@ export type { PitState, PitTool, ToolState } from "@/types/pit";
 
 /**
  * 统一数据源：优先 SSE 实时推送，失败时 3s 轮询回退。
- * 所有 PIT 页面读取同一份服务端状态（来自 MQTT 和 Home Assistant 实时订阅）。
+ * 所有 PIT 页面读取同一份服务端状态（来自设备长连接和 Home Assistant 实时轮询）。
  */
 export function usePitState(): { state: PitState | null; live: boolean } {
   const [state, setState] = useState<PitState | null>(null);
@@ -18,18 +18,27 @@ export function usePitState(): { state: PitState | null; live: boolean } {
     let poll: number | undefined;
     let retry: number | undefined;
     let stopped = false;
+    let polling = false;
+    let controller: AbortController | null = null;
 
     async function pollOnce() {
+      if (polling || document.hidden) return;
+      polling = true;
+      controller = new AbortController();
       try {
-        const res = await fetch("/api/pit", { cache: "no-store" });
+        const res = await fetch("/api/pit", { cache: "no-store", signal: controller.signal });
         const json = await res.json();
         if (!stopped && json.ok) setState(json.data);
       } catch {
         /* 网络错误时保持旧数据 */
+      } finally {
+        polling = false;
+        controller = null;
       }
     }
 
     function startSse() {
+      esRef.current?.close();
       const es = new EventSource("/api/pit/stream");
       esRef.current = es;
       es.onopen = () => setLive(true);
@@ -42,8 +51,11 @@ export function usePitState(): { state: PitState | null; live: boolean } {
         }
       };
       es.onerror = () => {
+        if (stopped || esRef.current !== es) return;
         setLive(false);
         es.close();
+        window.clearInterval(poll);
+        window.clearTimeout(retry);
         // SSE 失败 → 轮询回退
         pollOnce();
         poll = window.setInterval(pollOnce, 3000);
@@ -62,6 +74,7 @@ export function usePitState(): { state: PitState | null; live: boolean } {
     return () => {
       stopped = true;
       esRef.current?.close();
+      controller?.abort();
       window.clearInterval(poll);
       window.clearTimeout(retry);
     };
@@ -79,4 +92,14 @@ export async function pitControl(action: string, target: string, on?: boolean) {
   });
   const result = await response.json().catch(() => null) as { error?: string } | null;
   if (!response.ok) throw new Error(result?.error ?? "控制指令发送失败");
+}
+
+export async function sendCanSerialCommand(command: string) {
+  const response = await fetch("/api/pit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "can-serial", target: "main", command }),
+  });
+  const result = await response.json().catch(() => null) as { error?: string } | null;
+  if (!response.ok) throw new Error(result?.error ?? "串口调试指令发送失败");
 }

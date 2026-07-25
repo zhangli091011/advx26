@@ -3,7 +3,7 @@ import { getPitHub } from "@/lib/pit-hub";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** SSE 实时推送：树莓派收到 MQTT 更新即推给面板 */
+/** SSE 实时推送：树莓派收到设备长连接更新即推给面板 */
 export async function GET(request: Request) {
   const hub = getPitHub();
   const encoder = new TextEncoder();
@@ -12,16 +12,16 @@ export async function GET(request: Request) {
   const stream = new ReadableStream({
     start(controller) {
       let closed = false;
-      const send = () => {
+      const send = (serialized = hub.getSerializedState()) => {
         if (closed) return;
         try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(hub.state)}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${serialized}\n\n`));
         } catch {
           cleanup();
         }
       };
       send();
-      const onUpdate = () => send();
+      const onUpdate = (serialized: string) => send(serialized);
       hub.on("update", onUpdate);
       const keepalive = setInterval(() => {
         if (closed) return;

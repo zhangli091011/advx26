@@ -1,5 +1,4 @@
 import { apiError, apiSuccess, isSameOrigin } from "@/lib/api";
-import { HomeAssistantControlError } from "@/lib/home-assistant";
 import { isRecentlySeen, parsePitControl } from "@/lib/pit-control";
 import { getPitHub } from "@/lib/pit-hub";
 
@@ -39,36 +38,43 @@ export async function POST(request: Request) {
         const transport = await hub.setHomeAssistantPower(target, parsed.command.on);
         return apiSuccess({ sent: true, transport });
       } catch (error) {
-        return apiError(
-          error instanceof Error ? error.message : "Home Assistant 控制失败",
-          error instanceof HomeAssistantControlError ? error.status : 503,
-        );
+        return apiError(error instanceof Error ? error.message : "Home Assistant 插座控制失败", 503);
       }
     }
-    if (!hub.state.connection.brokerConnected) {
-      return apiError("MQTT Broker 未连接，指令未发送", 503);
+    if (!hub.state.connection.gatewayConnected) {
+      return apiError("设备网关长连接未建立，指令未发送", 503);
     }
     if (!isRecentlySeen(hub.state.connection.deviceLastSeen.power)) {
       return apiError("电源分控离线或数据已过期，禁止远程控制", 503);
     }
     sent = await hub.publishControl(`power/${target}`, { on: parsed.command.on });
   } else if (action === "locate") {
-    if (!hub.state.connection.brokerConnected) {
-      return apiError("MQTT Broker 未连接，指令未发送", 503);
+    if (!hub.state.connection.gatewayConnected) {
+      return apiError("设备网关长连接未建立，指令未发送", 503);
     }
-    if (!isRecentlySeen(hub.state.connection.deviceLastSeen.cabinet)) {
-      return apiError("储物柜分控离线或数据已过期，指令未发送", 503);
+    const toolDrawer = hub.drawerForTool(target);
+    const seenAt = toolDrawer ? hub.state.connection.deviceLastSeen.toolbox : hub.state.connection.deviceLastSeen.cabinet;
+    if (!isRecentlySeen(seenAt)) {
+      return apiError(`${toolDrawer ? "工具抽屉" : "储物柜"}分控离线或数据已过期，指令未发送`, 503);
     }
-    sent = await hub.publishControl(`locate/${target}`, { blink: true });
+    sent = await hub.publishControl(toolDrawer ? `toolbox/locate/${toolDrawer}` : `locate/${target}`, { blink: true });
   } else if (action === "locate-unit") {
-    if (!hub.state.connection.brokerConnected) {
-      return apiError("MQTT Broker 未连接，指令未发送", 503);
+    if (!hub.state.connection.gatewayConnected) {
+      return apiError("设备网关长连接未建立，指令未发送", 503);
     }
     if (!isRecentlySeen(hub.state.connection.deviceLastSeen.cabinet)) {
       return apiError("储物柜分控离线或数据已过期，指令未发送", 503);
     }
     sent = await hub.publishControl(`locate-unit/${target}`, { blink: true });
+  } else if (action === "can-serial") {
+    if (!hub.state.connection.gatewayConnected) {
+      return apiError("设备网关长连接未建立，指令未发送", 503);
+    }
+    if (!isRecentlySeen(hub.state.connection.deviceLastSeen.can)) {
+      return apiError("ESP32-S3 CAN 探针离线或数据已过期", 503);
+    }
+    sent = await hub.publishControl("can/serial", { command: parsed.command.command });
   }
 
-  return sent ? apiSuccess({ sent: true }) : apiError("MQTT 指令发送失败", 503);
+  return sent ? apiSuccess({ sent: true }) : apiError("长连接指令发送失败", 503);
 }
