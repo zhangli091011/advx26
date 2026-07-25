@@ -1,7 +1,7 @@
 import "server-only";
 
 import mqtt from "mqtt";
-import { MiotOutletManager } from "@/lib/miot-outlets";
+import { HomeAssistantOutletManager } from "@/lib/home-assistant-outlets";
 import type { StoredPitConfig } from "@/lib/pit-config-model";
 import type { PitConfigTestResult } from "@/types/pit-config";
 
@@ -28,24 +28,18 @@ export async function testMqttConfig(config: StoredPitConfig): Promise<PitConfig
   });
 }
 
-export async function testMiotConfig(config: StoredPitConfig, channelId: string): Promise<PitConfigTestResult> {
+export async function testHomeAssistantConfig(config: StoredPitConfig, channelId: string): Promise<PitConfigTestResult> {
   const startedAt = Date.now();
-  const manager = new MiotOutletManager(config.miot);
+  const manager = new HomeAssistantOutletManager(config.homeAssistant);
   try {
     const transport = await manager.testConnection(channelId);
-    return {
-      ok: true,
-      target: channelId,
-      transport,
-      latencyMs: Date.now() - startedAt,
-      message: `米家插座连接成功（${transport === "local" ? "局域网" : "云端"}）`,
-    };
+    return { ok: true, target: channelId, transport, latencyMs: Date.now() - startedAt, message: "Home Assistant 插座连接成功（REST）" };
   } catch (error) {
     return {
       ok: false,
       target: channelId,
       latencyMs: Date.now() - startedAt,
-      message: `米家插座连接失败：${error instanceof Error ? error.message : String(error)}`,
+      message: `Home Assistant 插座连接失败：${error instanceof Error ? error.message : String(error)}`,
     };
   } finally {
     manager.destroy();

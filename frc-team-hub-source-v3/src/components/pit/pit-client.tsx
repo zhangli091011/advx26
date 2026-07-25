@@ -180,7 +180,7 @@ export function PitClient() {
           <div key={c.id} className="pit-pwr-row" style={{ top: 61 + i * 56 }}>
             <span className="pit-pwr-name">{c.name}</span>
             <span className="pit-pwr-sub">
-              {`${c.id}  ·  ${c.amps === null ? "—A" : `${c.amps.toFixed(2)}A`}${c.provider === "miot" ? `  ·  MIOT ${c.transport?.toUpperCase() ?? ""}` : ""}`}
+              {`${c.id}  ·  ${c.amps === null ? "—A" : `${c.amps.toFixed(2)}A`}${c.provider === "home-assistant" ? "  ·  HA REST" : ""}`}
             </span>
             <span className="pit-pwr-status" style={{ color: !c.online ? "var(--pit-err)" : c.on ? "var(--pit-ok)" : "var(--pit-text-2)" }}>
               {!c.online ? "OFFLINE" : c.on ? "ON" : "OFF"}

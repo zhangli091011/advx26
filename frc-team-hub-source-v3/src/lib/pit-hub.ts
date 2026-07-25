@@ -2,7 +2,7 @@ import "server-only";
 
 import mqtt from "mqtt";
 import { EventEmitter } from "node:events";
-import { MiotOutletManager } from "@/lib/miot-outlets";
+import { HomeAssistantOutletManager } from "@/lib/home-assistant-outlets";
 import { loadPitConfigFallback } from "@/lib/pit-config";
 import { ToolManager } from "@/lib/tool-manager";
 import type {
@@ -40,7 +40,7 @@ function emptyState(): PitState {
     connection: {
       brokerConnected: false,
       lastMessageAt: null,
-      deviceLastSeen: { cabinet: null, power: null, miot: null, can: null, vision: null, toolbox: null },
+      deviceLastSeen: { cabinet: null, power: null, homeAssistant: null, can: null, vision: null, toolbox: null },
     },
     tools: [],
     units: [],
@@ -69,7 +69,7 @@ const globalForPit = globalThis as unknown as {
 class PitHub extends EventEmitter {
   state: PitState = emptyState();
   private client: mqtt.MqttClient | null = null;
-  private miot: MiotOutletManager | null = null;
+  private homeAssistant: HomeAssistantOutletManager | null = null;
   private tools = new ToolManager();
   private started = false;
 
@@ -79,18 +79,18 @@ class PitHub extends EventEmitter {
     this.refreshTools();
     const config = loadPitConfigFallback();
     try {
-      this.miot = new MiotOutletManager(config.miot);
-      this.miot.start((channel) => {
+      this.homeAssistant = new HomeAssistantOutletManager(config.homeAssistant);
+      this.homeAssistant.start((channel) => {
         const index = this.state.channels.findIndex((item) => item.id === channel.id);
         if (index >= 0) this.state.channels[index] = channel;
         else this.state.channels.push(channel);
         this.state.channels.sort((a, b) => a.id.localeCompare(b.id));
-        if (channel.online) this.state.connection.deviceLastSeen.miot = channel.updatedAt;
+        if (channel.online) this.state.connection.deviceLastSeen.homeAssistant = channel.updatedAt;
         this.markUpdated(Date.now());
       });
     } catch (error) {
-      console.error(`[miot] 配置加载失败：${error instanceof Error ? error.message : String(error)}`);
-      this.miot = null;
+      console.error(`[home-assistant] 配置加载失败：${error instanceof Error ? error.message : String(error)}`);
+      this.homeAssistant = null;
     }
     const url = config.mqtt.url;
     try {
@@ -228,7 +228,7 @@ class PitHub extends EventEmitter {
     const d = asRecord(data);
     if (!d) return false;
     if (parts[2] === "power" && parts[3]) {
-      if (this.miot?.hasChannel(parts[3])) return false;
+      if (this.homeAssistant?.hasChannel(parts[3])) return false;
       const volts = finiteNumber(d.volts, 0, 500);
       const amps = finiteNumber(d.amps, 0, 100);
       const watts = finiteNumber(d.watts, 0, 50_000);
@@ -392,13 +392,13 @@ class PitHub extends EventEmitter {
     });
   }
 
-  hasMiotChannel(id: string) {
-    return this.miot?.hasChannel(id) ?? false;
+  hasHomeAssistantChannel(id: string) {
+    return this.homeAssistant?.hasChannel(id) ?? false;
   }
 
-  async setMiotPower(id: string, on: boolean) {
-    if (!this.miot) throw new Error("米家插座未配置");
-    return this.miot.setPower(id, on);
+  async setHomeAssistantPower(id: string, on: boolean) {
+    if (!this.homeAssistant) throw new Error("Home Assistant 插座未配置");
+    return this.homeAssistant.setPower(id, on);
   }
 }
 

@@ -60,8 +60,8 @@ export interface PowerChannel {
   amps: number | null;
   watts: number | null;
   on: boolean;
-  provider: "mqtt" | "miot";
-  transport: "local" | "cloud" | null;
+  provider: "mqtt" | "home-assistant";
+  transport: "rest" | null;
   online: boolean;
   updatedAt: number;
   model?: string;
@@ -91,7 +91,7 @@ export interface PitConnection {
   deviceLastSeen: {
     cabinet: number | null;
     power: number | null;
-    miot: number | null;
+    homeAssistant: number | null;
     can: number | null;
     vision: number | null;
     toolbox: number | null;

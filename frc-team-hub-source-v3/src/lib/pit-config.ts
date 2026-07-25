@@ -37,6 +37,15 @@ export function savePitConfig(config: StoredPitConfig) {
   const directory = path.dirname(filePath);
   const temporary = `${filePath}.${process.pid}.tmp`;
   fs.mkdirSync(directory, { recursive: true });
+  if (fs.existsSync(filePath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(filePath, "utf8")) as { version?: unknown };
+      const backup = path.join(directory, "pit-config.v1.backup.json");
+      if (existing.version !== 2 && !fs.existsSync(backup)) fs.copyFileSync(filePath, backup);
+    } catch {
+      // The regular save path will replace an invalid file only after validated input is available.
+    }
+  }
   fs.writeFileSync(temporary, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
   fs.renameSync(temporary, filePath);
   try {

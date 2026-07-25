@@ -27,7 +27,7 @@
 
 机器人 CAN 总线 → USB-CAN 适配器 → 树莓派 can-bridge → MQTT
 工具二维码     → USB 摄像头     → 树莓派 vision-scan → MQTT
-米家智能插座 3 → 局域网 MIoT（优先）/ 小米云（回退）→ Next.js
+小米智能插座 → Home Assistant → REST API → Next.js
 ```
 
 10 工具位配置、当前状态、扫码会话和最近事务保存在 `PIT_CONFIG_DIR/pit-tools.json`。扫码服务只发布原始二维码，主控完成状态校验后更新工具状态并向 ESP32 发布 retained LED 快照。
@@ -42,20 +42,11 @@ npm run dev
 
 默认无硬件时显示空态与 MQTT topic 提示；连接 Broker 并收到设备上报后显示真实数据。
 
-## 米家智能插座 3
+## Home Assistant 电源
 
-在 `.env.local` 中通过 `MIOT_OUTLETS_JSON` 把插座绑定到 `CH1-CH8`。每个插座可同时配置：
+先在 Home Assistant 中接入小米智能插座，然后在 `/pit/settings` 配置 HA URL 和长期访问令牌，点击“一键发现 HA 插座”并导入到 `CH1-CH8`。PIT-OS 通过 REST API 读取 `switch.*` 和可选 `sensor.*` 实体，并调用 `switch.turn_on/turn_off` 控制开关。
 
-- `ip` + 32 位十六进制 `token`：局域网直连，优先使用。
-- `did`：局域网失败时允许回退小米云。
-- `model`：米家设备清单返回的真实型号。
-- `power`、`watts`、`volts`、`amps`：对应型号的 MIoT `siid/piid` 与可选 `scale`。
-
-`xiaomi.plug.mcn005` 常见映射：开关 `2/1`、当前功率 `3/2`。`chuangmi.plug.212a01` 常见映射：开关 `2/1`、功率 `5/6`、电流 `5/2`、电压 `5/3`。商品名不能唯一确定型号，请以账号设备清单和 `https://miot-spec.org/miot-spec-v2/` 返回结果为准。
-
-云端回退可配置 `MIOT_CLOUD_USERNAME`、`MIOT_CLOUD_PASSWORD` 和 `MIOT_CLOUD_REGION`；启用二次验证的账号应配置 `MIOT_CLOUD_SESSION_JSON`。所有凭据仅供服务端使用，不要使用 `NEXT_PUBLIC_` 前缀。
-
-也可以在 `/pit/settings` 中管理 MQTT、米家云和每个 `CH1-CH8` 插座。配置保存到 `PIT_CONFIG_DIR/pit-config.json`；Electron 自动使用当前用户的应用数据目录，树莓派建议使用 `/var/lib/pit-os`。密码、token 和云 session 不会返回浏览器，编辑框留空表示保留原值。保存后重启服务生效。
+长期访问令牌仅保存在服务端 `PIT_CONFIG_DIR/pit-config.json`，不会返回浏览器。建议为 PIT-OS 创建专用 Home Assistant 用户和令牌。旧版小米配置会保留通道名称和区域，但需要重新绑定 HA 实体。
 
 提交前运行：
 

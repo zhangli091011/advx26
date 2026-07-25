@@ -1,24 +1,11 @@
-export type MiotPropertyInput = {
-  siid: number;
-  piid: number;
-  scale: number;
-};
-
-export type MiotOutletInput = {
+export type HomeAssistantOutletInput = {
   id: string;
   name: string;
   zone: string;
-  model: string;
-  ip: string;
-  token: string;
-  tokenConfigured: boolean;
-  clearToken?: boolean;
-  did: string;
-  nominalVolts: number;
-  power: MiotPropertyInput;
-  watts: MiotPropertyInput | null;
-  volts: MiotPropertyInput | null;
-  amps: MiotPropertyInput | null;
+  switchEntityId: string;
+  wattsEntityId: string;
+  voltsEntityId: string;
+  ampsEntityId: string;
 };
 
 export type PitConfigView = {
@@ -31,38 +18,30 @@ export type PitConfigView = {
     passwordConfigured: boolean;
     clearPassword?: boolean;
   };
-  miot: {
+  homeAssistant: {
+    baseUrl: string;
+    accessToken: string;
+    accessTokenConfigured: boolean;
+    clearAccessToken?: boolean;
     pollIntervalMs: number;
-    debug: boolean;
-    cloud: {
-      region: string;
-      username: string;
-      password: string;
-      passwordConfigured: boolean;
-      clearPassword?: boolean;
-      session: string;
-      sessionConfigured: boolean;
-      clearSession?: boolean;
-      brokerUrl: string;
-    };
-    outlets: MiotOutletInput[];
+    migrationRequired: boolean;
+    outlets: HomeAssistantOutletInput[];
   };
 };
 
 export type PitConfigTestResult = {
   ok: boolean;
   target: string;
-  transport?: "local" | "cloud";
+  transport?: "rest";
   latencyMs: number;
   message: string;
 };
 
-export type DiscoveredMiotDevice = {
-  did: string;
+export type DiscoveredHomeAssistantOutlet = {
+  entityId: string;
   name: string;
-  model: string;
-  ip: string;
-  online: boolean;
-  localAvailable: boolean;
-  mappingKnown: boolean;
+  available: boolean;
+  wattsEntityId: string;
+  voltsEntityId: string;
+  ampsEntityId: string;
 };

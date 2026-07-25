@@ -1,7 +1,7 @@
 import { apiError, apiSuccess, isSameOrigin } from "@/lib/api";
 import { getPitConfigPath, loadPitConfig, loadPitConfigFallback, savePitConfig } from "@/lib/pit-config";
 import { mergePitConfigInput, publicPitConfig } from "@/lib/pit-config-model";
-import { testMiotConfig, testMqttConfig } from "@/lib/pit-config-test";
+import { testHomeAssistantConfig, testMqttConfig } from "@/lib/pit-config-test";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const config = loadPitConfig();
     if (body.target === "mqtt") return apiSuccess(await testMqttConfig(config));
     if (typeof body.target === "string" && /^CH[1-8]$/.test(body.target)) {
-      return apiSuccess(await testMiotConfig(config, body.target));
+      return apiSuccess(await testHomeAssistantConfig(config, body.target));
     }
     return apiError("未知测试目标", 400);
   } catch (error) {

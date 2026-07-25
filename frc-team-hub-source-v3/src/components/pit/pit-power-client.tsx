@@ -52,16 +52,16 @@ export function PitPowerClient() {
             >
               <i />
             </button>
-            {c.provider === "miot" ? (
+            {c.provider === "home-assistant" ? (
               <span style={{ position: "absolute", right: 18, top: 47, color: "var(--pit-blue)", fontSize: 9, letterSpacing: 1 }}>
-                MIOT {c.transport?.toUpperCase() ?? "OFFLINE"} · {c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : "无实时数据"}
+                HA {c.transport?.toUpperCase() ?? "OFFLINE"} · {c.updatedAt ? new Date(c.updatedAt).toLocaleTimeString("zh-CN", { hour12: false }) : "无实时数据"}
               </span>
             ) : null}
           </div>
         ))}
         {channels.length === 0 ? (
           <div style={{ position: "absolute", left: 24, top: 200, color: "var(--pit-text-2)", fontSize: 13 }}>
-            等待米家智能插座数据…（设置页一键获取并导入）
+            等待 Home Assistant 插座数据…（设置页一键发现并导入）
           </div>
         ) : null}
         {controlError ? (

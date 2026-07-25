@@ -33,12 +33,12 @@ export async function POST(request: Request) {
   const { action, target } = parsed.command;
   let sent = false;
   if (action === "power") {
-    if (hub.hasMiotChannel(target)) {
+    if (hub.hasHomeAssistantChannel(target)) {
       try {
-        const transport = await hub.setMiotPower(target, parsed.command.on);
+        const transport = await hub.setHomeAssistantPower(target, parsed.command.on);
         return apiSuccess({ sent: true, transport });
       } catch (error) {
-        return apiError(error instanceof Error ? error.message : "米家插座控制失败", 503);
+        return apiError(error instanceof Error ? error.message : "Home Assistant 插座控制失败", 503);
       }
     }
     if (!hub.state.connection.brokerConnected) {
